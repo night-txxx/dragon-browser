@@ -4,6 +4,15 @@
 // Orquestra os componentes e consome o estado reativo via window.browserAPI
 // =============================================================================
 
+// Tratamento de erros e logs consistentes na interface gráfica
+window.addEventListener('error', (event) => {
+  console.error('[Dragon Renderer] Erro na interface:', event.error || event.message);
+});
+
+window.addEventListener('unhandledrejection', (event) => {
+  console.error('[Dragon Renderer] Rejeição de Promise não tratada na interface:', event.reason);
+});
+
 document.addEventListener('DOMContentLoaded', async () => {
   // 1. Instanciação dos componentes visuais
   const toolbar = new window.ToolbarComponent();

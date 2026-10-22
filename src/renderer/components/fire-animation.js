@@ -564,11 +564,16 @@ class FireAnimationComponent {
       // Atualiza badge central no pico
       this.updateCenterBadge(phase);
 
-      // Renderiza quadro em WebGL ou Fallback 2D
-      if (this.useWebGL && this.gl) {
-        this.renderWebGLFrame(currentTime - startTime, coverage, dissipation);
-      } else {
-        this.renderCanvas2DFrame(coverage, dissipation, phase);
+      // Renderiza quadro em WebGL ou Fallback 2D com tolerância a falhas
+      try {
+        if (this.useWebGL && this.gl) {
+          this.renderWebGLFrame(currentTime - startTime, coverage, dissipation);
+        } else {
+          this.renderCanvas2DFrame(coverage, dissipation, phase);
+        }
+      } catch (renderErr) {
+        console.warn('[FireAnimation] Falha na renderização de quadro, alternando para fallback:', renderErr);
+        this.useWebGL = false;
       }
 
       // Finalização da dissipação

@@ -20,14 +20,6 @@ function init(context) {
   if (!fs.existsSync(storageDir)) {
     fs.mkdirSync(storageDir, { recursive: true });
   }
-
-  // ---------------------------------------------------------------------------
-  // [PONTO DE EXTENSÃO: INICIALIZAÇÃO DE BANCOS DE DADOS OU ARQUIVOS LOCAIS]
-  // Aqui você pode criar arquivos padrão na primeira execução, por exemplo:
-  // - history.json      -> para armazenar histórico de navegação
-  // - bookmarks.json    -> para armazenar links favoritos
-  // - settings.json     -> para armazenar preferências (tema, zoom, mecanismo de busca)
-  // ---------------------------------------------------------------------------
 }
 
 /**
@@ -96,27 +88,6 @@ function writeJSON(filename, data) {
     return false;
   }
 }
-
-// -----------------------------------------------------------------------------
-// [PONTO DE EXTENSÃO: MÉTODOS DE HISTÓRICO]
-// Exemplo de funções futuras para implementar:
-// - addHistoryEntry({ url, title, timestamp })
-// - getHistory(limit)
-// - clearHistory()
-// -----------------------------------------------------------------------------
-
-// -----------------------------------------------------------------------------
-// [PONTO DE EXTENSÃO: MÉTODOS DE FAVORITOS]
-// Exemplo de funções futuras para implementar:
-// - addBookmark({ id, title, url, createdAt })
-// - removeBookmark(id)
-// - getBookmarks()
-// -----------------------------------------------------------------------------
-
-// -----------------------------------------------------------------------------
-// [LIMPEZA DE DADOS SALVOS DO NAVEGADOR]
-// Remove os arquivos locais gerados pela navegação do usuário (histórico, etc.)
-// -----------------------------------------------------------------------------
 
 /**
  * Remove com segurança todos os arquivos JSON de dados gerados pelo navegador

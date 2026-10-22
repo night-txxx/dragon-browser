@@ -190,16 +190,20 @@ function configureSession(ses, isPrivate = false) {
     return permissions.getPermission(origin, key);
   };
 
-  // 4. Política de permissões por site com prompt e persistência
+  // 4. Política de permissões por site com prompt e persistência (negar por padrão)
   ses.setPermissionRequestHandler((webContents, permission, callback, details) => {
     if (ALLOWED_PERMISSIONS.has(permission)) {
-      callback(true);
+      if (details && details.isMainFrame !== false) {
+        callback(true);
+        return;
+      }
+      callback(false);
       return;
     }
 
     const permissionKey = getPermissionKey(permission, details);
     if (!permissionKey) {
-      console.warn(`[Segurança] Permissão desconhecida negada para ${details?.requestingUrl}: ${permission}`);
+      console.warn(`[Segurança] Permissão desconhecida negada por padrão para ${details?.requestingUrl}: ${permission}`);
       callback(false);
       return;
     }

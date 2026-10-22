@@ -1,0 +1,52 @@
+{
+  "env": {
+    "es2022": true,
+    "node": true
+  },
+  "parserOptions": {
+    "ecmaVersion": 2022,
+    "sourceType": "script"
+  },
+  "rules": {
+    "no-undef": "error",
+    "no-unused-vars": ["warn", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }],
+    "no-const-assign": "error",
+    "no-dupe-keys": "error",
+    "no-duplicate-case": "error",
+    "no-empty": ["warn", { "allowEmptyCatch": true }],
+    "no-unreachable": "error",
+    "valid-typeof": "error"
+  },
+  "overrides": [
+    {
+      "files": ["src/renderer/**/*.js", "pages/**/*.js"],
+      "env": {
+        "browser": true,
+        "node": false
+      },
+      "globals": {
+        "browserAPI": "readonly",
+        "settingsAPI": "readonly",
+        "certErrorAPI": "readonly",
+        "httpsWarningAPI": "readonly",
+        "errorAPI": "readonly",
+        "downloadsAPI": "readonly",
+        "historyAPI": "readonly",
+        "bookmarksAPI": "readonly"
+      }
+    },
+    {
+      "files": ["src/preload/**/*.js"],
+      "env": {
+        "node": true,
+        "browser": true
+      }
+    },
+    {
+      "files": ["test/**/*.js"],
+      "env": {
+        "node": true
+      }
+    }
+  ]
+}

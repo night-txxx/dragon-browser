@@ -27,6 +27,9 @@ test('isValidSetting: valida tipos, limites e enums', () => {
   assert.strictEqual(isValidSetting('proxyMode', 'manual'), true);
   assert.strictEqual(isValidSetting('proxyMode', 'socks'), false);
 
+  assert.strictEqual(isValidSetting('showShortcuts', true), true);
+  assert.strictEqual(isValidSetting('clearDataOnExit', true), true);
+  assert.strictEqual(isValidSetting('clearDataOnExit', 'true'), false);
   assert.strictEqual(isValidSetting('fingerprintProtectionEnabled', true), true);
   assert.strictEqual(isValidSetting('fingerprintProtectionEnabled', 'yes'), false);
   assert.strictEqual(isValidSetting('fingerprintSpoofTimezone', false), true);

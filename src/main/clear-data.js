@@ -121,9 +121,17 @@ async function clearAllData(context, options = {}) {
   // Obter sessão padrão do Electron
   const defaultSession = session ? session.defaultSession : null;
 
-  // 6. Limpar cada storage separadamente em try/catch individual (sem 'quotas')
+  // 6. Limpar dados de armazenamento (clearStorageData em chamada geral e por tipo)
   if (defaultSession && typeof defaultSession.clearStorageData === 'function') {
     let anyStorageError = false;
+    try {
+      // Chamada ampla padrão recomendada pelo Electron/Chromium
+      await defaultSession.clearStorageData({});
+      console.log('[ClearData] Limpeza geral de storageData concluída na sessão padrão.');
+    } catch (err) {
+      console.warn('[ClearData] Aviso na chamada geral de clearStorageData:', err.message);
+    }
+
     for (const st of STORAGE_TYPES) {
       try {
         await defaultSession.clearStorageData({ storages: [st] });
@@ -141,6 +149,7 @@ async function clearAllData(context, options = {}) {
     if (defaultSession && typeof defaultSession.clearCache === 'function') {
       await defaultSession.clearCache();
       summary.cacheCleared = true;
+      console.log('[ClearData] Cache de rede da sessão padrão limpo com sucesso.');
     }
   } catch (err) {
     console.error('[ClearData] Erro ao limpar cache de rede:', err);
@@ -152,6 +161,7 @@ async function clearAllData(context, options = {}) {
     if (defaultSession && typeof defaultSession.clearCodeCaches === 'function') {
       await defaultSession.clearCodeCaches({});
       summary.codeCacheCleared = true;
+      console.log('[ClearData] Cache de código da sessão padrão limpo com sucesso.');
     }
   } catch (err) {
     console.error('[ClearData] Erro ao limpar cache de código:', err);
@@ -163,6 +173,7 @@ async function clearAllData(context, options = {}) {
     if (defaultSession && typeof defaultSession.clearAuthCache === 'function') {
       await defaultSession.clearAuthCache();
       summary.authCacheCleared = true;
+      console.log('[ClearData] Cache de autenticação HTTP limpo com sucesso.');
     }
   } catch (err) {
     console.error('[ClearData] Erro ao limpar auth cache:', err);
@@ -174,6 +185,7 @@ async function clearAllData(context, options = {}) {
     if (defaultSession && typeof defaultSession.clearHostResolverCache === 'function') {
       await defaultSession.clearHostResolverCache();
       summary.hostResolverCacheCleared = true;
+      console.log('[ClearData] Cache do resolvedor de host (DNS) limpo com sucesso.');
     }
   } catch (err) {
     console.error('[ClearData] Erro ao limpar host resolver cache:', err);
@@ -185,6 +197,7 @@ async function clearAllData(context, options = {}) {
     if (defaultSession && typeof defaultSession.clearHSTS === 'function') {
       await defaultSession.clearHSTS();
       summary.hstsCleared = true;
+      console.log('[ClearData] Políticas HSTS limpas com sucesso.');
     }
   } catch (err) {
     console.error('[ClearData] Erro ao limpar HSTS:', err);
@@ -195,6 +208,7 @@ async function clearAllData(context, options = {}) {
   try {
     if (storage && typeof storage.clearBrowserData === 'function') {
       summary.localFilesRemoved = storage.clearBrowserData();
+      console.log('[ClearData] Arquivos locais auxiliares removidos:', summary.localFilesRemoved);
     }
   } catch (err) {
     console.error('[ClearData] Erro ao limpar dados locais do storage:', err);
@@ -205,6 +219,7 @@ async function clearAllData(context, options = {}) {
   try {
     if (storage && typeof storage.writeJSON === 'function') {
       storage.writeJSON('sessions.json', { urls: [] });
+      console.log('[ClearData] sessions.json zerado no disco.');
     }
   } catch (err) {
     console.warn('[ClearData] Aviso ao zerar sessions.json:', err.message);
@@ -230,6 +245,12 @@ async function clearAllData(context, options = {}) {
           if (session && typeof session.fromPartition === 'function') {
             const customSes = session.fromPartition(part);
             if (customSes) {
+              try {
+                if (typeof customSes.clearStorageData === 'function') {
+                  await customSes.clearStorageData({});
+                }
+              } catch {}
+
               for (const st of STORAGE_TYPES) {
                 try {
                   if (typeof customSes.clearStorageData === 'function') {
@@ -245,10 +266,14 @@ async function clearAllData(context, options = {}) {
               if (typeof customSes.clearCodeCaches === 'function') {
                 await customSes.clearCodeCaches({});
               }
+              if (typeof customSes.clearAuthCache === 'function') {
+                await customSes.clearAuthCache();
+              }
               if (typeof customSes.clearHostResolverCache === 'function') {
                 await customSes.clearHostResolverCache();
               }
               summary.customPartitionsCleared++;
+              console.log(`[ClearData] Partição privada '${part}' limpa integralmente.`);
             }
           }
         } catch (e) {

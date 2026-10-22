@@ -168,6 +168,12 @@ function init(context) {
     mainWindow.maximize();
   }
 
+  // Segurança estrita da casca da interface: impede navegação para fora de index.html
+  mainWindow.webContents.on('will-navigate', (event) => {
+    event.preventDefault();
+  });
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+
   // Carrega a interface HTML do navegador (barra de topo, abas e navegação)
   const rendererPath = path.join(__dirname, '../renderer/index.html');
   mainWindow.loadFile(rendererPath);

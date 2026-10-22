@@ -28,6 +28,9 @@ const DEFAULT_SETTINGS = {
   proxyAuthPasswordEncrypted: '',
   applyProxyToPrivateTabs: false,
 
+  // Seção Encerramento e Privacidade
+  clearDataOnExit: false,
+
   // Seção Proteção contra Fingerprinting Avançada (Configurável + Reset)
   fingerprintProtectionEnabled: false,
   fingerprintSpoofTimezone: false,
@@ -135,6 +138,7 @@ function isValidSetting(key, value) {
       return typeof value === 'string' && (value === '' || BACKGROUND_IMAGE_REGEX.test(value));
 
     case 'showShortcuts':
+    case 'clearDataOnExit':
       return typeof value === 'boolean';
 
     case 'proxyMode':

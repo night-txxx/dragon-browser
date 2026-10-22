@@ -38,6 +38,7 @@ const inputStartupUrl = document.getElementById('input-startup-url');
 
 const inputHomeUrl = document.getElementById('input-home-url');
 const selectZoom = document.getElementById('select-zoom');
+const chkClearOnExit = document.getElementById('chk-clear-on-exit');
 
 // Seção Personalização
 const colorSwatches = document.querySelectorAll('.color-swatch');
@@ -399,6 +400,7 @@ async function loadSettings() {
 
     setValIfNotFocused(inputHomeUrl, s.homePageUrl || '');
     setValIfNotFocused(selectZoom, (s.defaultZoom || 1.0).toString());
+    setCheckedIfNotFocused(chkClearOnExit, Boolean(s.clearDataOnExit));
 
     // Seção Personalização
     applyAccentColorLocal(s.accentColor || '#4d7cff');
@@ -541,6 +543,13 @@ function initEvents() {
     selectZoom.addEventListener('change', () => {
       const factor = parseFloat(selectZoom.value) || 1.0;
       window.settingsAPI.setSetting('defaultZoom', factor);
+    });
+  }
+
+  // Limpar dados ao fechar
+  if (chkClearOnExit) {
+    chkClearOnExit.addEventListener('change', () => {
+      window.settingsAPI.setSetting('clearDataOnExit', chkClearOnExit.checked);
     });
   }
 

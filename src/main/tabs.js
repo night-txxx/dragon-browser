@@ -753,15 +753,21 @@ function createTab(initialUrl = null, options = { active: true, isPrivate: false
     }
   });
 
-  // SEGURANÇA: Se for aba de configurações, impede navegação para fora dela
-  if (isSettings) {
-    view.webContents.on('will-navigate', (event, navUrl) => {
+  // SEGURANÇA: Interceptação e validação de will-navigate para todas as abas
+  view.webContents.on('will-navigate', (event, navUrl) => {
+    if (isSettings) {
       if (!navUrl.startsWith(config.SETTINGS_PAGE_URL)) {
         event.preventDefault();
         createTab(navUrl, { active: true });
       }
-    });
-  }
+      return;
+    }
+
+    if (!isAllowedNavigationUrl(navUrl)) {
+      console.warn(`[Segurança] Navegação bloqueada para protocolo não permitido via will-navigate: ${navUrl}`);
+      event.preventDefault();
+    }
+  });
 
   // Sincroniza configurações ao terminar de montar o DOM da página de nova aba
   view.webContents.on('dom-ready', () => {
@@ -882,8 +888,11 @@ function closeTab(tabId) {
       activePrivatePartitions.delete(removedTab.partition);
       try {
         const privSes = session.fromPartition(removedTab.partition);
-        privSes.clearStorageData();
+        privSes.clearStorageData({});
         privSes.clearCache();
+        if (typeof privSes.clearAuthCache === 'function') {
+          privSes.clearAuthCache();
+        }
       } catch (err) {
         console.warn(`[TabManager] Aviso ao limpar sessão privada de ${tabId}:`, err.message);
       }
@@ -980,16 +989,25 @@ function destroyAllTabs() {
   for (const tab of tabsToClose) {
     if (tab && tab.view) {
       try {
-        const wcId = tab.view.webContents.id;
-        privacy.resetTabTrackerData(wcId);
-        privacy.clearAllowedHttpHosts(wcId);
-        privacy.clearAllowedCertHosts(wcId);
-        sessionModule.cancelPendingRequestsForWebContents(wcId);
-
-        if (mainWindowRef && !mainWindowRef.isDestroyed()) {
-          mainWindowRef.contentView.removeChildView(tab.view);
+        const wc = tab.view.webContents;
+        const wcId = wc && !wc.isDestroyed() ? wc.id : null;
+        if (wcId) {
+          try { privacy.resetTabTrackerData(wcId); } catch {}
+          try { privacy.clearAllowedHttpHosts(wcId); } catch {}
+          try { privacy.clearAllowedCertHosts(wcId); } catch {}
+          try { sessionModule.cancelPendingRequestsForWebContents(wcId); } catch {}
         }
-        tab.view.webContents.close();
+
+        if (mainWindowRef && !mainWindowRef.isDestroyed() && mainWindowRef.contentView) {
+          try {
+            mainWindowRef.contentView.removeChildView(tab.view);
+          } catch {}
+        }
+        if (wc && !wc.isDestroyed()) {
+          try {
+            wc.close();
+          } catch {}
+        }
       } catch (err) {
         console.warn(`[TabManager] Aviso ao destruir aba ${tab.id}:`, err.message);
       }

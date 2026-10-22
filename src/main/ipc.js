@@ -436,6 +436,9 @@ function init(context) {
     menu.setIsClearing(false);
     windowManager.hideOverlay();
     const newTab = tabManager.createTab(config.NEW_TAB_URL, { active: true });
+    if (typeof tabManager.notifyStateChange === 'function') {
+      tabManager.notifyStateChange();
+    }
     return { success: true, tabId: newTab ? newTab.id : null };
   });
 
@@ -737,13 +740,15 @@ function init(context) {
 
   ipcMain.handle('downloads:open-file', (event, filePath) => {
     if (!isDownloadsSender(event)) return false;
-    downloads.openFile(filePath);
+    if (typeof filePath !== 'string' || !filePath.trim()) return false;
+    downloads.openFile(filePath.trim());
     return true;
   });
 
   ipcMain.handle('downloads:show-in-folder', (event, filePath) => {
     if (!isDownloadsSender(event)) return false;
-    downloads.showInFolder(filePath);
+    if (typeof filePath !== 'string' || !filePath.trim()) return false;
+    downloads.showInFolder(filePath.trim());
     return true;
   });
 

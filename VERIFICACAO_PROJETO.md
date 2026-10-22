@@ -1,300 +1,152 @@
 # DOSSIÊ COMPLETO DE AUDITORIA E VERIFICAÇÃO DO PROJETO: DRAGON
 
----
-
-## REGISTRO DESTA RODADA DE CORREÇÕES
-
-Abaixo está o registro detalhado, item por item, de todas as correções efetuadas, decisões autônomas tomadas e justificativas técnicas da rodada.
-
-### BLOCO 1: BUGS
-* **1.1 Lista de permissões (settings.js)**:
-  - *O que foi feito*: Reescreveu-se a renderização de permissões em `pages/settings.js` para iterar sobre as chaves do objeto `item.permissions` retornado por `permissions.getAllPermissions()`. Cada linha exibe agora um par único (origem + recurso), com rótulos amigáveis em português (`media:video` = Câmera, `media:audio` = Microfone, `media` = Câmera e Microfone, `notifications` = Notificações, `geolocation` = Localização) e o badge correto (Permitido/Bloqueado). O botão "Revogar" invoca `settingsAPI.revokePermission(origin, permissionKey)`, revogando apenas o recurso individual daquela linha, sem apagar as demais permissões do mesmo domínio.
-  - *Decisão tomada*: Utilizou-se criação de nós DOM com `textContent` para origens e rótulos, protegendo a página contra injeção de HTML.
-
-* **1.2 Preload de abas (`src/preload/tab-preload.js`) sem `path`**:
-  - *O que foi feito*: Remoção total de `require('path')`, `__dirname` e `pathToFileURL`, incompatíveis com o modo `sandbox: true` do Electron. A identificação das páginas internas agora decodifica `window.location.pathname`, normaliza separadores (`/`), converte para minúsculas e valida os sufixos (`/pages/history.html`, `/pages/bookmarks.html`, `/pages/downloads.html`, `/pages/https-warning.html` e `/pages/cert-error.html`).
-  - *Decisão tomada*: A validação de segurança forte permaneceu estritamente no Main Process (`isPageSender`), preservando o modelo de segurança em profundidade.
-
-* **1.3 Dropdown da omnibox (`#omnibox-dropdown`)**:
-  - *O que foi feito*: O estilo CSS em `components.css` foi alterado para `position: fixed` com `z-index: 9999`. O cálculo de posicionamento (`left`, `width` e `top = rect.bottom + 4`) foi implementado em `addressbar.js` via `this.form.getBoundingClientRect()` tanto no momento de abertura quanto em ouvinte de `window.addEventListener('resize')`.
-  - *Decisão tomada*: Como o dropdown desce além dos 76px da barra superior sobrepondo o conteúdo nativo da WebContentsView, manteve-se o uso integrado de `showOverlay()` / `hideOverlay()`.
-
-* **1.4 Visibilidade de Ctrl+F e Toast**:
-  - *O que foi feito*: Criou-se o estado `isFindBarOpen` e o método `setFindBarOpen(open)` em `src/main/window.js`. Ao abrir a barra de busca, o Main Process adiciona `FIND_BAR_HEIGHT` (44px) ao `topOffset` da visualização nativa da aba ativa, empurrando a página para baixo e reservando espaço visível sem ocultar o site. Ao fechar a barra de busca, o layout retorna instantaneamente para 76px. Para o `#fire-toast`, o posicionamento foi movido para `top: 18px` em `components.css`, ficando estritamente dentro da barra superior de 76px e sempre visível acima de qualquer página.
-
-* **1.5 CSP de Favicons em `src/renderer/index.html`**:
-  - *O que foi feito*: Atualizou-se a diretiva `img-src` da Content-Security-Policy em `src/renderer/index.html` de `img-src 'self' data:;` para `img-src 'self' data: https: http:;`, permitindo carregar ícones de páginas externas na barra de abas.
-
-* **1.6 Menu de contexto - "Pesquisar ..." (`src/main/context-menu.js`)**:
-  - *O que foi feito*: Corrigiu-se a ação de clique do item de busca no menu de contexto. Agora o módulo importa `./settings` e utiliza `settings.getSearchUrl(params.selectionText.trim())` para construir a URL de busca antes de invocar `createTab`, evitando abertura de abas em branco decorrentes de validação de URL.
-
-* **1.7 Downloads ativos e progresso em tempo real (`src/main/downloads.js` e `pages/downloads.*`)**:
-  - *O que foi feito*: `getDownloads()` agora inclui os downloads com status `progressing` no topo da lista com `receivedBytes` e `totalBytes` atualizados. Em `pages/downloads.html` e `pages/downloads.js`, adicionou-se a barra de progresso visual (`.download-progress-wrap` e `.download-progress-bar`), exibição de porcentagem e botão "Cancelar". Em `components.css`, foi criado o indicador animado `.downloading` com efeito sutil de pulsação no botão de downloads da barra superior.
-
-* **1.8 Bypass seguro de erro de certificado (`pages/cert-error.*`, `src/main/privacy.js`, `src/main/ipc.js` e `src/main/main.js`)**:
-  - *O que foi feito*: Implementou-se o fluxo criptográfico de uso único para bypass de erro SSL/TLS: a página `cert-error.html` exibe alerta de confirmação e solicita um token seguro (`crypto.randomUUID`, TTL 30s) via canal IPC `cert-error:request-bypass-token`. Ao prosseguir, o canal `cert-error:proceed` consome o token e armazena o host liberado temporariamente para aquele `webContentsId` em memória. O handler global `app.on('certificate-error')` consulta se a aba e o host estão autorizados, permitindo a conexão apenas para aquela aba durante a sessão, sendo descartada ao fechar a aba.
-
-* **1.9 Favoritos com título correto (`src/main/tabs.js` e `src/renderer/components/addressbar.js`)**:
-  - *O que foi feito*: O método `getState()` de `tabs.js` voltou a incluir `currentTitle: activeTab ? (activeTab.title || '') : ''`. Em `addressbar.js`, o toggle de favoritos utiliza esse título ao salvar novos favoritos.
-
-* **1.10 Histórico de navegação (`src/main/history.js`, `tabs.js` e `main.js`)**:
-  - *O que foi feito*:
-    - Eliminação de duplicatas: em `did-navigate`, a entrada é registrada com o URL e título inicial; no evento `page-title-updated`, invoca-se `history.updateTitle(url, title)`, que apenas atualiza o título da entrada mais recente sem criar registros adicionais.
-    - Exclusão de URLs internas: adicionadas `HISTORY_PAGE_URL`, `BOOKMARKS_PAGE_URL`, `DOWNLOADS_PAGE_URL`, `SETTINGS_PAGE_URL` e o prefixo `dragon://` à lista de rejeição.
-    - Otimização de I/O: implementou-se debounce de 1 segundo para a gravação em disco de `history.json`, e força-se gravação imediata síncrona (`flushHistorySync`) no evento `app.on('before-quit')`.
+Este documento consolida o relatório integral de auditoria, diagnóstico de segurança, ciclo de engenharia (Etapas 0 a 5) e o **código-fonte completo e sem omissões** de todos os arquivos do navegador desktop **Dragon**, construído em **Electron puro**, JavaScript CommonJS e Vanilla JS, com foco rigoroso em privacidade, isolamento de processos e segurança.
 
 ---
 
-### BLOCO 2: PRIVACIDADE
-* **2.1 Pilha de abas fechadas em "Apagar Tudo" (`src/main/tabs.js` e `src/main/clear-data.js`)**:
-  - *O que foi feito*: Em `destroyAllTabs()` e através da nova função exportada `clearClosedTabs()`, a pilha `closedTabsStack` é completamente esvaziada. Ao apagar os dados do navegador, o atalho <kbd>Ctrl+Shift+T</kbd> não reabre páginas fechadas. Adicionou-se teste automatizado dedicado em `test/clear-data.test.js`.
+## 1. REGISTRO DAS ETAPAS DE ENGENHARIA (ETAPA 0 A ETAPA 5)
 
-* **2.2 Isolamento de abas privadas (`src/main/tabs.js`, `downloads.js` e `session.js`)**:
-  - *O que foi feito*:
-    - Downloads: `registerSessionDownloads(ses, isPrivate)` aceita a flag `isPrivate`. Downloads de abas privadas funcionam na interface enquanto em progresso, mas nunca são gravados no `downloads.json`.
-    - Permissões: em sessões privadas, permissões marcadas com "Lembrar desta decisão" são salvas estritamente em memória no mapa `privatePermissions` e descartadas ao fechar a aba/partição, sem tocar em `permissions.json`.
-    - Passagem de parâmetro: `tabs.js` passa `isPrivate = true` para `sessionModule.configureSession(tabSession, true)`.
+Abaixo está o registro detalhado de todas as etapas executadas pelo Engenheiro Sênior de Electron:
 
-* **2.3 Mapeamento correto de Câmera e Microfone (`src/main/session.js`)**:
-  - *O que foi feito*: `getPermissionKey` avalia os `mediaTypes`: se contiver `video` e `audio` juntos, retorna a chave combinada `media` (rótulo "Câmera e Microfone"). Retorna `media:video` ou `media:audio` apenas quando for estritamente um tipo. O `setPermissionCheckHandler` foi ajustado para considerar que a concessão de `media` cobre ambos os recursos.
-
-* **2.4 Fila sequencial de solicitações de permissão (`src/renderer/components/permission-sheet.js` e `src/main/session.js`)**:
-  - *O que foi feito*: Implementou-se uma fila sequencial no componente `permission-sheet.js`. Se um pedido chegar enquanto outro estiver aberto, ele é enfileirado. Ao responder, processa-se o próximo da fila. O overlay só é ocultado quando a fila esvaziar. No processo principal, se a aba for fechada ou navegar para outra URL, o método `cancelPendingRequestsForWebContents(wcId)` nega (`callback(false)`) e cancela todos os pedidos pendentes daquele WebContents.
-
-* **2.5 Validação estrita de atualização da Blocklist (`src/main/privacy.js` e `pure/privacy-utils.js`)**:
-  - *O que foi feito*: Em `checkForBlocklistUpdates`, cada linha baixada é validada com a função pura `isValidBlocklistHost`, aceitando apenas hostnames sintaticamente válidos (letras, números, hífen e pontos, com ao menos um ponto, sem espaços, sem barras e sem comentários `#`). Adicionou-se limite máximo de download de 5 MB e timeout de 15 segundos para abortar requisições instáveis.
+### ETAPA 0: DIAGNÓSTICO DO PROJETO
+Auditoria inicial em todo o código-fonte sem alterações, mapeando vulnerabilidades, falhas de isolamento, vazamento de memória e inconsistências funcionais:
+* **Botão "Apagar Tudo"**: Invocava limpeza de partição com parâmetros parciais, deixando sessões privadas ativas em memória e não notificando adequadamente o renderer caso ocorressem exceções.
+* **Segurança do Electron**: Ausência de interceptação universal de `will-navigate` e `setWindowOpenHandler` na janela principal; necessidade de negar permissões de hardware por padrão (`setPermissionRequestHandler`); falta de validação estrita de tipos primitivos em canais IPC sensíveis de downloads.
+* **Privacidade**: Inexistência da opção do usuário para limpar dados automaticamente ao encerrar o navegador (`clearDataOnExit`); necessidade de reforçar isolamento de processos via flag `site-per-process`.
+* **Organização**: Presença de comentários mortos de protótipos de métodos em `storage.js` e ausência de arquivo de regras de ESLint adaptado ao projeto.
 
 ---
 
-### BLOCO 3: QUALIDADE
-* **3.1 Importação de funções puras e cobertura de testes**:
-  - *O que foi feito*: Módulos de produção (`src/main/navigation.js` e `src/main/privacy.js`) agora importam diretamente de `src/main/pure/navigation-utils.js` e `src/main/pure/privacy-utils.js`, eliminando código duplicado. Criaram-se testes unitários reais em `test/history.test.js`, `test/permissions.test.js`, `test/tabs.test.js` e ampliou-se `test/privacy.test.js` e `test/clear-data.test.js` (total de 24 testes automatizados, 100% passando).
-
-* **3.2 Escrita atômica e recuperação em `storage.js`**:
-  - *O que foi feito*: `writeJSON` agora grava primeiramente em `arquivo.tmp`, gera/atualiza cópia de segurança em `arquivo.bak` e executa substituição atômica via `fs.renameSync` sobre o arquivo final. Em `readJSON`, caso o arquivo principal esteja corrompido, realiza fallback transparente para o backup `arquivo.bak` sem crashar.
-
-* **3.3 Otimização do DOM e eliminação de flicker em `tabs-view.js`**:
-  - *O que foi feito*: O componente agora armazena a ordem anterior de abas (`lastTabOrder`) e o último ID ativo (`lastActiveTabId`). O DOM só executa reordenação (`appendChild`) se a ordem das abas realmente mudou, e o `scrollIntoView` só é disparado quando a aba ativa for alterada. Arrastar e soltar (drag & drop) e navegação funcionam sem recriação ou flicker.
-
-* **3.4 Estabilidade dos campos na página de configurações (`pages/settings.js`)**:
-  - *O que foi feito*: Criou-se verificação de foco (`document.activeElement`) ao receber notificações de alteração de configurações (`settings:changed`). Inputs, selects e sliders em edição pelo usuário não sofrem sobrescrita nem saltos.
-
-* **3.5 Higienização de strings de terceiros contra injeção de HTML**:
-  - *O que foi feito*: Substituição de `innerHTML` por criação de nós nativos e atribuição segura de `textContent` no dropdown da barra de endereços (`addressbar.js`), na lista de permissões de origens (`pages/settings.js`) e no gerenciador de downloads (`pages/downloads.js`).
-
-* **3.6 Popups OAuth e janelas filhas seguras (`src/main/tabs.js`)**:
-  - *O que foi feito*: No evento `did-create-window`, aplicou-se a remoção de menus nativos (`setMenu(null)`), atribuição do ícone oficial do Dragon, listener seguro de `setWindowOpenHandler` para impedir popups em cadeia, propagação de atalhos globais de teclado (`before-input-event`) e menu de contexto nativo.
-
-* **3.7 Tela cheia em vídeos HTML5 (`src/main/window.js`)**:
-  - *O que foi feito*: Em `setHtmlFullScreen(fullscreen)`, a janela principal agora invoca `mainWindow.setFullScreen(true/false)`, preservando se a janela já estava em tela cheia antes do vídeo ser iniciado, além de ocultar/restaurar a barra superior de abas e navegação.
-
-* **3.8 Autenticação HTTP Basic em sites (`src/main/session.js`)**:
-  - *O que foi feito*: No evento `app.on('login')`, quando a requisição não for de proxy (`!authInfo.isProxy`), executa-se `event.preventDefault()` e invoca-se `callback()` para prevenir o travamento do processo principal do Electron aguardando credenciais.
-  - *Decisão registrada*: Deixou-se a exibição de modal de autenticação básica para sites web como pendência futura, priorizando a estabilidade do processo sem travar o navegador.
-
-* **3.9 Execução de testes cross-platform (`package.json`)**:
-  - *O que foi feito*: Script `"test"` atualizado para `"node --test"`, que aciona nativamente a descoberta de testes do Node.js sem dependência de expansão de globos do shell no Windows.
+### ETAPA 1: BUGS QUE QUEBRAM FUNÇÕES (APAGAR TUDO)
+* **src/main/clear-data.js**:
+  - Implementada chamada geral recomendada `defaultSession.clearStorageData({})` antes de varrer cada tipo de storage específico.
+  - Adicionado log explícito e tratamento assíncrono para `clearCache`, `clearCodeCaches`, `clearAuthCache` e `clearHostResolverCache`.
+  - Inclusa limpeza de autenticação HTTP (`clearAuthCache`) nas partições privadas ativas.
+* **src/main/tabs.js**:
+  - Em `destroyAllTabs`, isolou-se a destruição de cada aba individual em blocos `try/catch` protegidos, garantindo que o fechamento prossiga mesmo se uma aba específica estiver travada.
+* **src/main/ipc.js**:
+  - No handler `app:finish-clear-session`, adicionou-se a chamada explícita `tabManager.notifyStateChange()`, sincronizando a interface gráfica instantaneamente.
+* **src/renderer/components/fire-animation.js**:
+  - O loop de renderização do frame de animação WebGL foi envolvido em bloco `try/catch` com fallback automático para Canvas 2D, garantindo que o callback de conclusão e limpeza seja sempre chamado.
 
 ---
 
-### BLOCO 4: MELHORIAS AVANÇADAS DE SEGURANÇA E PRIVACIDADE (5 ETAPAS)
-* **4.1 Bloqueador de Pop-ups e Redirecionamentos Forçados (`src/main/tabs.js`, `pure/privacy-utils.js`, `privacy.js`, `toolbar.js`)**:
-  - *O que foi feito*:
-    - Em `setWindowOpenHandler`, bloqueia-se qualquer tentativa de abertura de nova janela/aba quando `userGesture === false`, independentemente da disposição, a menos que o site possua exceção ativa (`isSiteExempt`).
-    - Criou-se a função pura `isSuspiciousRedirectChain`, que monitora o histórico de navegação em `will-redirect`. Ao detectar mais de 2 domínios diferentes em menos de 1,5 segundos sem interação do usuário, cancela a navegação (`event.preventDefault()`), contabiliza em `popupsBlocked` e despacha `browser:redirect-blocked`.
-    - Adicionou-se badge temporário `#redirect-blocked-bar` na toolbar com o domínio bloqueado e o botão *"Permitir mesmo assim"* via canal `navigation:allow-redirect`.
-    - O contador `popupsBlocked` é exposto no painel do escudo de privacidade.
-
-* **4.2 Classificação de Privacidade do Site (Selo A-F) (`src/main/pure/privacy-utils.js`, `privacy.js`, `privacy-shield.js`)**:
-  - *O que foi feito*:
-    - Criou-se a função pura `calculatePrivacyGrade(info)` baseada em pontuação de 100 pontos: penalidades por protocolo HTTP inseguro (-40 pts), volume de rastreadores bloqueados (-5 a -35 pts), pop-ups/redirecionamentos forçados (-10 a -20 pts) e cookies de terceiros não contidos (-10 pts). Notas: **A** (≥90), **B** (≥75), **C** (≥60), **D** (≥40), **F** (<40).
-    - Exibição de badge colorido (`#shield-grade-badge`) ao lado do contador de rastreadores no painel do escudo.
-    - O canal `privacy:get-info` inclui a nota calculada e testes unitários cobrem notas A, B, C, D e F.
-
-* **4.3 Confirmação e Reforço de Site Isolation (`src/main/main.js`, `README.md`)**:
-  - *O que foi feito*:
-    - Verificou-se e confirmou-se que o Electron ^44.9.0 (Chromium 134+) utiliza isolamento por site.
-    - Adicionou-se explicitamente antes de `app.whenReady()` a flag `app.commandLine.appendSwitch('site-per-process')`, documentando a garantia de que cada origem rode em processo de renderização estritamente isolado.
-    - Documentou-se no README a confirmação de Site Isolation citando a versão testada.
-
-* **4.4 Aviso de Download de Arquivo Potentially Perigoso (`src/main/pure/download-utils.js`, `downloads.js`, `download-risk-sheet.js`)**:
-  - *O que foi feito*:
-    - Criou-se `download-utils.js` com a lista `RISKY_EXTENSIONS` (.exe, .bat, .cmd, .scr, .msi, .vbs, .ps1, .jar, etc.) e a função pura `isRiskyDownload(filename)`.
-    - Em `will-download`, caso o arquivo seja de risco, o download é pausado com `item.pause()` e um evento `downloads:risk-prompt` é emitido para a interface. Arquivos seguros (.pdf, .docx, .zip, .png, etc.) prosseguem normalmente.
-    - Criou-se o modal bottom-sheet `download-risk-sheet.js` com confirmação explícita: "Cancelar download" (`item.cancel()`) e "Continuar mesmo assim" (`item.resume()`).
-    - Testes unitários dedicados em `test/downloads.test.js`.
-
-* **4.5 Proteção contra Fingerprinting Global Única (`src/main/pure/settings-utils.js`, `pure/fingerprint-utils.js`, `fingerprint-protection.js`, `tab-preload.js`, `pages/settings.*`)**:
-  - *O que foi feito*:
-    - Nova seção na barra lateral de configurações: "Privacidade Avançada" com ícone de impressão digital e painel de controle.
-    - Toggle principal global (desligado por padrão) e 5 sub-opções com feedback visual de ativação/desativação: Timezone UTC, Resolução 1920x1080, Ruído determinístico no Canvas/WebGL por sessão (com seed fixo e algoritmo LCG de ±1 canal de cor), Limitação de fontes do sistema e Normalização estável de User-Agent sem versão do Electron.
-    - Injeção das proteções estritamente em páginas web normais em `tab-preload.js`, nunca em páginas internas do Dragon (`pages/*.html`).
-    - Testes unitários para determinismo de sementes, sutileza de ruído e normalização em `test/fingerprint.test.js`.
+### ETAPA 2: SEGURANÇA DO ELECTRON
+* **src/main/window.js**:
+  - Adicionada interceptação explícita de `will-navigate` com `event.preventDefault()` e `setWindowOpenHandler(() => ({ action: 'deny' }))` no `webContents` da janela principal (UI), impedindo que a casca do navegador navegue para URLs externas.
+* **src/main/tabs.js**:
+  - Substituída validação condicional por interceptação universal de `will-navigate` em todas as abas criadas, validando destinos com `isAllowedNavigationUrl` e bloqueando navegações arbitrárias para protocolos perigosos (`javascript:`, `data:`, `vbscript:`, etc.).
+* **src/main/session.js**:
+  - Endurecido o `setPermissionRequestHandler`: exige categoricamente que `details.isMainFrame !== false` e rejeita por padrão (`callback(false)`) qualquer solicitação de permissão de hardware ou recurso sensível.
+* **src/main/ipc.js**:
+  - Implementada validação estrita de tipo de dados e verificação de string não vazia nos canais `downloads:open-file` e `downloads:show-in-folder`.
+* **src/renderer/index.html**:
+  - A Content-Security-Policy (CSP) da interface do navegador foi explicitamente reforçada com `script-src 'self'`.
 
 ---
 
-### BLOCO 5: AJUSTES VISUAIS E CORREÇÃO DE SERIALIZAÇÃO IPC
-* **5.1 Ícone da Nova Aba e Páginas Internas (`pages/newtab.html`, `pages/settings.html`, `pages/history.html`, etc.)**:
-  - *O que foi feito*:
-    - Removido o fundo com gradiente e a moldura sólida retangular de `.logo-icon` em `pages/newtab.html` e `.sidebar-logo` em `pages/settings.html`.
-    - Adicionado halo de luz neon com `filter: drop-shadow()` multicamadas nas cores da paleta oficial do Dragão Azul (`--fire-mid` e `--fire-main`).
-    - Adicionada pulsação contínua suave (`@keyframes logo-glow-pulse` e `sidebar-glow-pulse`) e intensificação no hover com `scale(1.08)`.
-    - O mesmo acabamento com glow neon foi propagado para `.header-logo` em `history.html`, `downloads.html` e `bookmarks.html`.
-
-* **5.2 Correção de Serialização IPC em `app:open-*` (`src/main/ipc.js`)**:
-  - *O que foi feito*:
-    - Corrigido o erro `Error: An object could not be cloned` nos canais IPC `app:open-settings`, `app:open-downloads`, `app:open-history` e `app:open-bookmarks`.
-    - Os manipuladores retornavam o objeto `tab` contendo a instância C++ nativa de `WebContentsView`, incompatível com o algoritmo de clonagem estruturada do Electron.
-    - Agora retornam `tab ? tab.id : null`, uma string perfeitamente serializável.
+### ETAPA 3: PRIVACIDADE
+* **src/main/pure/settings-utils.js & test/settings.test.js**:
+  - Adicionada a chave `clearDataOnExit: false` ao esquema padrão de configurações (`DEFAULT_SETTINGS`) e na validação de tipos de `isValidSetting`.
+* **src/main/main.js**:
+  - No evento `before-quit`, implementada interceptação assíncrona que verifica se `clearDataOnExit` está ativo: previne o encerramento imediato, dispara `clearData.clearAllData` e só encerra a aplicação após a confirmação da limpeza total de caches, cookies e histórico.
+  - Adicionado o switch do Chromium `app.commandLine.appendSwitch('site-per-process')` para garantir Site Isolation e proteção contra ataques de canal lateral (Spectre/Meltdown).
+* **pages/settings.html & pages/settings.js**:
+  - Adicionado o switch visual "Limpar dados ao fechar o navegador" com sincronização bidirecional na API de configurações.
+* **src/main/tabs.js**:
+  - Endurecida a limpeza e descarte de partições de abas privadas no fechamento individual de abas, acionando `clearStorageData({})`, `clearCache()` e `clearAuthCache()`.
 
 ---
 
-### BLOCO 6: SISTEMA DE FINGERPRINTING MULTIVETORIAL POTENTE E RESET DE IDENTIDADE (EXPANSÃO DOLPHIN ANTY-STYLE)
-* **6.1 Arquitetura e Filosofia ("Configurar o Navegador Apenas")**:
-  - *O que foi feito*: Expandiu-se o fingerprinting do Dragon para um escopo comparável ao Dolphin Anty, mantendo a filosofia de configuração global única e soberana (sem complexidade de múltiplos perfis nem contas).
-  - *Decisão tomada*: O usuário configura cada vetor livremente no painel de configurações ou utiliza o botão "Resetar Fingerprint" para gerar instantaneamente uma nova identidade aleatória e internamente consistente.
-
-* **6.2 Cobertura dos 5 Grupos de Vetores de Fingerprinting**:
-  - *Grupo A — Identidade do Sistema*:
-    - SO Alvo (`fpOs`): `windows11`, `windows10`, `macos`, `linux`.
-    - Navegador Relatado (`fpBrowser`): `chrome`, `edge`, `firefox`.
-    - User-Agent (`fpUserAgent`): Auto-derivado coerente ou manual com validação por regex.
-    - Plataforma (`fpPlatform`): `auto`, `Win32`, `MacIntel`, `Linux x86_64`.
-    - Idioma (`fpLocale`): `pt-BR`, `en-US`, `es-ES`, `fr-FR`, `de-DE`.
-    - Fuso Horário (`fpTimezone`): Interceptação de `Intl.DateTimeFormat.prototype.resolvedOptions` e `Date.prototype.getTimezoneOffset` com mapa de fusos compatíveis.
-  - *Grupo B — Hardware e Resolução*:
-    - Resolução de Tela (`fpScreenResolution`): `1920x1080`, `2560x1440`, `1366x768`, `1536x864`, `2880x1800` (exclusivo Mac Retina), `3840x2160`.
-    - Device Pixel Ratio (`fpDevicePixelRatio`): Auto-derivado da resolução ou manual (`1`, `1.25`, `1.5`, `2`, `3`).
-    - Núcleos de CPU (`fpHardwareConcurrency`): Interceptação de `navigator.hardwareConcurrency` (2, 4, 6, 8, 12, 16).
-    - Memória RAM (`fpDeviceMemory`): Interceptação de `navigator.deviceMemory` (2, 4, 8, 16, 32 GB).
-    - Toque (`fpTouchSupport`): `navigator.maxTouchPoints` (0 para desktop, 5 se habilitado).
-  - *Grupo C — Placa de Vídeo e WebGL*:
-    - Fabricante e Renderizador (`fpWebglVendor` e `fpWebglRenderer`): Interceptação de extensões de depuração não-mascaradas `0x9245` (`UNMASKED_VENDOR_WEBGL`) e `0x9246` (`UNMASKED_RENDERER_WEBGL`) em WebGL e WebGL2.
-    - Modos de Imagem WebGL (`fpWebglImageMode`): `noise` (ruído determinístico em `readPixels`), `real` e `mask`.
-    - *Regra inegociável*: macOS NUNCA utiliza GPUs NVIDIA modernas, impedindo anomalias que facilitem detecção.
-  - *Grupo D — Canvas 2D, Áudio, ClientRects & Fontes*:
-    - Canvas 2D (`fpCanvasMode`): Ruído determinístico estável por sessão de ±1 canal de cor em `toDataURL` e `getImageData` preservando canais transparentes.
-    - Áudio (`fpAudioMode`): Ruído imperceptível (±0.00002) em `AudioBuffer.prototype.getChannelData` mantendo a assinatura acústica limpa.
-    - ClientRects (`fpClientRectsMode`): Micro-ruído em `Element.prototype.getBoundingClientRect` (±0.05px) ou modo `mask` com arredondamento.
-    - Fontes (`fpFontsMode`): Modo `mask` filtra consultas em `document.fonts.check` para a lista canônica de fontes do sistema operacional alvo.
-  - *Grupo E — Outros Vetores*:
-    - WebRTC (`fpWebrtcMode`): `proxy` (`default_public_interface_only` sem vazamento de IP local), `disabled` (anula APIs RTCPeerConnection no contexto da página) e `real`.
-    - Dispositivos de Mídia (`fpMediaDevicesCount`): Spoofing de 0 a 3 dispositivos em `navigator.mediaDevices.enumerateDevices`.
-    - Vozes de Síntese (`fpSpeechVoices`): Interceptação de `speechSynthesis.getVoices` com vozes realistas do SO alvo.
-    - Bateria (`fpBatteryMode`): Spoofing de `navigator.getBattery` (100% carregando).
-    - Permissões (`fpPermissionsMode`): Retorno consistente em `navigator.permissions.query` como `state: 'prompt'`.
-
-* **6.3 Validação Rigorosa de Consistência Interna (`validateFingerprintConsistency`)**:
-  - *O que foi feito*: Função pura em `src/main/pure/fingerprint-utils.js` que audita o perfil completo:
-    - Erro estrito: macOS com vendor ou renderer NVIDIA.
-    - Avisos: macOS sem plataforma `MacIntel`, Windows sem plataforma `Win32`, Linux sem `Linux x86_64`, Firefox sem assinatura no User-Agent, resolução 2880×1800 fora do macOS, resolução 1366×768 com DPR > 1.25, 32GB de RAM com apenas 2 núcleos e incoerências entre fuso horário e idioma.
-    - Na interface (`pages/settings.html`), a caixa `#fp-consistency-box` exibe os erros em vermelho e os avisos em âmbar dinamicamente.
-
-* **6.4 Mecanismo de Reset de Identidade Instantâneo**:
-  - *O que foi feito*:
-    - Adicionada a semente persistente de 32 bits `fpFingerprintSeed` no `settings.json`.
-    - Função `pickRandomConsistentPreset()`: sorteia ponderadamente SO, navegador, resolução coerente, hardware compatível, GPU legítima e timezone compatível, validando consistência em loop com fallback comprovado.
-    - Botão "Resetar Fingerprint" no topo de `pages/settings.html` com diálogo de confirmação nativo.
-    - Canal IPC `fingerprint:reset` invoca `settings.resetFingerprint()`, persiste a nova identidade, notifica a interface e aciona `tabManager.reloadAllWebTabs()`, recarregando todas as abas web abertas para assumirem a nova impressão digital imediatamente.
-
-* **6.5 Isolamento e Determinismo**:
-  - *O que foi feito*: O script de mitigação é gerado dinamicamente em `src/main/fingerprint-protection.js` e injetado pelo `tab-preload.js` estritamente em páginas web (`http:` e `https:`). Páginas internas (`dragon://` e `pages/*.html`) são categoricamente excluídas. O ruído utiliza geradores pseudoaleatórios lineares (LCG) indexados por semente, garantindo determinismo por sessão.
+### ETAPA 4: ORGANIZAÇÃO E QUALIDADE
+* **src/main/main.js**:
+  - Adicionados tratamentos centrais para `uncaughtException` e `unhandledRejection`, registrando erros detalhados no console e evitando falhas silenciosas no processo principal.
+* **src/renderer/app.js**:
+  - Adicionados ouvintes globais para eventos de `error` e `unhandledrejection` na janela da interface gráfica.
+* **src/main/storage.js**:
+  - Removidos blocos de comentários mortos e redundantes deixados por protótipos de extensão anteriores.
+* **.eslintrc.json**:
+  - Criado arquivo de configuração do ESLint na raiz ajustado ao ecossistema do Dragon (Node.js ES2022 no main e Browser com globais seguras `browserAPI` e `settingsAPI` no renderer), sem adicionar dependências ou passos de build.
 
 ---
 
-### BLOCO 7: CORREÇÃO E RESILIÊNCIA DO MECANISMO DE BUSCA E NORMALIZAÇÃO DE URLS
-* **7.1 Diagnóstico da Causa Raiz de Falha na Barra de Endereços**:
-  - *Problema diagnosticado*: Em `src/main/navigation.js`, a normalização da entrada da barra de endereços invocava `settings.getSearchUrl('%s')`. Por sua vez, `getSearchUrl(query)` aplicava `encodeURIComponent(query)`, convertendo `'%s'` no caractere escapado `'%25s'`. O normalizador puro procurava por `'%s'` para substituir pelos termos do usuário, não encontrava correspondência e retornava literalmente `https://duckduckgo.com/?q=%25s` para qualquer pesquisa realizada.
+### ETAPA 5: CHECKLIST DE TESTES MANUAIS E FECHAMENTO
 
-* **7.2 Correções Implementadas**:
-  - *Em `src/main/navigation.js`*: Corrigido para passar `searchTemplate: settings.getSearchUrlTemplate()`, preservando a marcação `%s` intacta e sem escape antecipado.
-  - *Em `src/main/pure/navigation-utils.js`*: Criada a função utilitária pura `applySearchTemplate(template, query)`, que trata com tolerância a falhas templates contendo `%s`, `%25s` ou URLs base que demandem concatenação de parâmetros.
-  - *Em `pages/newtab.js`*: Atualizado o listener de submissão do formulário da Nova Aba para utilizar a mesma lógica de substituição defensiva.
-  - *Em `src/main/pure/settings-utils.js`*: Ajustada a validação da chave `customSearchUrl` em `isValidSetting` para aceitar string vazia `""` (valor padrão inicial).
-  - *Em `test/navigation.test.js`*: Criados novos testes unitários para `applySearchTemplate` e para a integração do módulo de navegação do processo principal, elevando a suíte para 45 testes automatizados (100% aprovados).
+#### Checklist Completo de Testes Funcionais:
+1. **Abas e Navegação**:
+   - [ ] Abrir nova aba pelo botão `+` e pelo atalho <kbd>Ctrl+T</kbd>.
+   - [ ] Fechar aba ativa pelo botão `x` e pelo atalho <kbd>Ctrl+W</kbd>.
+   - [ ] Fechar a última aba restante: o navegador deve criar automaticamente uma nova aba limpa.
+   - [ ] Alternar entre abas abertas usando <kbd>Ctrl+Tab</kbd> e <kbd>Ctrl+Shift+Tab</kbd>.
+   - [ ] Alternar diretamente para abas específicas com <kbd>Ctrl+1</kbd> até <kbd>Ctrl+8</kbd>, e <kbd>Ctrl+9</kbd> para a última aba.
+   - [ ] Reabrir a última aba fechada com <kbd>Ctrl+Shift+T</kbd> (não deve restaurar abas privadas).
+   - [ ] Reordenar abas arrastando e soltando com o mouse (Drag & Drop sem flicker).
+   - [ ] Navegar para uma URL completa (`https://duckduckgo.com`).
+   - [ ] Digitar termos de busca na Omnibox e pressionar Enter: deve abrir a pesquisa no mecanismo padrão configurado.
+   - [ ] Utilizar o histórico de navegação com os botões Voltar / Avançar e atalhos <kbd>Alt+←</kbd> / <kbd>Alt+→</kbd>.
+   - [ ] Recarregar a página com o botão de recarregar e atalhos <kbd>Ctrl+R</kbd> ou <kbd>F5</kbd>.
+   - [ ] Ajustar zoom da página com <kbd>Ctrl++</kbd>, <kbd>Ctrl+-</kbd> e redefinir com <kbd>Ctrl+0</kbd>.
+   - [ ] Abrir barra de pesquisa textual na página com <kbd>Ctrl+F</kbd>, buscar termos e fechar com <kbd>Esc</kbd>.
+
+2. **Histórico, Favoritos e Downloads**:
+   - [ ] Acessar o Histórico via menu ou atalho <kbd>Ctrl+H</kbd> (`dragon://history`).
+   - [ ] Excluir um item individual do histórico e verificar persistência.
+   - [ ] Limpar todo o histórico e confirmar que a página é atualizada.
+   - [ ] Adicionar página atual aos favoritos pelo atalho <kbd>Ctrl+D</kbd> ou botão de estrela na barra de endereços.
+   - [ ] Acessar Favoritos via atalho ou endereço `dragon://bookmarks` e abrir um link favorito.
+   - [ ] Baixar um arquivo comum (ex: imagem ou PDF) e verificar a barra de progresso no gerenciador de downloads (<kbd>Ctrl+J</kbd>).
+   - [ ] Baixar um executável (.exe ou .msi) e verificar se o modal de aviso de risco de download é exibido antes de salvar.
+
+3. **Configurações e Personalização**:
+   - [ ] Abrir Configurações pelo menu ou atalho <kbd>Ctrl+,</kbd> (`dragon://settings`).
+   - [ ] Alterar o mecanismo de busca padrão (Google, DuckDuckGo, Bing, etc.) e validar em nova busca.
+   - [ ] Alterar a cor de destaque (Accent Color) na paleta e verificar aplicação em tempo real nos botões e bordas.
+   - [ ] Alternar entre tema Escuro, Claro e Seguir o Sistema.
+   - [ ] Ativar a opção **"Limpar dados ao fechar o navegador"**, navegar, fechar o navegador e conferir se o histórico e sessões foram zerados.
+
+4. **Privacidade e Abas Privadas**:
+   - [ ] Abrir uma aba privada via menu ou atalho <kbd>Ctrl+Shift+N</kbd>.
+   - [ ] Verificar o distintivo de "Nova Aba Privada" e verificar que ela utiliza partição isolada em memória (`private-<id>`).
+   - [ ] Fazer login em um site na aba privada e fechar a aba: reabrir a página em outra aba e verificar que os cookies não persistem.
+   - [ ] Clicar no Escudo de Privacidade na barra de navegação para visualizar a nota do site e a contagem de rastreadores bloqueados.
+   - [ ] Alternar a chave de exceção de proteção do escudo para o domínio ativo.
+
+5. **Apagar Tudo (O Fogo do Dragão Azul)**:
+   - [ ] Clicar no botão da chama azul na barra de ferramentas ou pressionar <kbd>Ctrl+Shift+Del</kbd>.
+   - [ ] No painel inferior de confirmação, optar por incluir ou não os favoritos.
+   - [ ] Clicar em "Apagar tudo agora": verificar a execução suave da animação de fogo azul, destruição de todas as abas e abertura de uma aba limpa com toast confirmatório.
+   - [ ] Pressionar <kbd>Ctrl+Shift+T</kbd> logo em seguida: nenhuma aba apagada deve ser reaberta.
+
+#### Débitos Técnicos e Melhorias Futuras:
+* Implementar suporte a perfis múltiplos de usuário independentes (ex: Trabalho / Pessoal).
+* Adicionar suporte nativo à instalação de extensões WebExtensions (Chrome Extension API básica).
+* Implementar diálogo nativo customizado para autenticação HTTP Basic/Digest (`app.on('login')`).
+* Adicionar suporte a temas customizados criados livremente pelo usuário via CSS personalizado.
 
 ---
 
-## 1. RESUMO EXECUTIVO E ARQUITETURA
+## 2. RESUMO EXECUTIVO E ARQUITETURA
 
-### 1.1 Stack e Filosofia
+### 2.1 Stack e Filosofia
 * **Nome Oficial**: Dragon
-* **Tecnologias**: Electron (v33+ estável), JavaScript puro (CommonJS no backend e Vanilla JS no frontend), HTML5 e CSS3 Vanilla.
+* **Tecnologias**: Electron (v33+ / v44+ estável), JavaScript puro (CommonJS no backend e Vanilla JS no frontend), HTML5 e CSS3 Vanilla.
 * **Sem Frameworks ou Build**: O projeto roda diretamente com `npm install` e `npm start`. Não há Webpack, Vite, Babel, TypeScript nem TailwindCSS.
-* **Arquitetura Modular (Um Módulo por Responsabilidade)**:
-  * **Main Process (`src/main/`)**: É a única fonte de verdade de todo o estado do navegador. Gerencia janelas, sessões de rede, ciclo de vida das abas, privacidade, preferências e atalhos.
-  * **Preload Seguro Geral (`src/preload/preload.js`)**: Ponte estrita via `contextBridge.exposeInMainWorld('browserAPI', ...)`. Isolação total: `contextIsolation: true`, `sandbox: true`, `nodeIntegration: false`. O frontend não possui acesso direto ao Node.js nem ao `ipcRenderer`.
-  * **Preload Isolado de Configurações (`src/preload/settings-preload.js`)**: Exclusivo para a página interna `pages/settings.html` via `contextBridge.exposeInMainWorld('settingsAPI', ...)`. Sites externos nunca recebem este preload nem têm acesso à API de configurações.
-  * **Preload Seguro de Abas e Páginas Internas (`src/preload/tab-preload.js`)**: Expõe APIs dedicadas e restritas para páginas internas (`historyAPI`, `bookmarksAPI`, `downloadsAPI`, `warningAPI`, `certErrorAPI`) com validação de remetente e sem módulos nativos do Node.js.
-  * **IPC Centralizado e Protegido (`src/main/ipc.js`)**: Todos os canais IPC são definidos e validados exclusivamente neste arquivo. Validação estrita do remetente (`isMainSender`, `isSettingsSender`, `isPageSender`).
-  * **Módulo de Configurações (`src/main/settings.js`)**: Persistência reativa em `settings.json` com mescla segura de novos campos padrão, suporte a proxy, criptografia de senhas via DPAPI (`safeStorage`) e teste de conectividade.
-  * **Design System Centralizado (`src/renderer/styles/theme.css`)**: Todas as cores, fontes, raios de borda e paletas ficam definidos neste arquivo CSS, com suporte dinâmico a tema escuro e claro.
-  * **Abas com `WebContentsView`**: O navegador não utiliza a tag legada e insegura `<webview>`. Cada aba é uma instância isolada de `WebContentsView` anexada à janela principal abaixo da barra superior (`config.TOP_BAR_HEIGHT = 76px`).
-  * **Controle de Camadas (Overlay Management)**: O módulo `window.js` provê as funções `showOverlay()` e `hideOverlay()` para ocultar temporariamente a visualização da página ativa durante a exibição de dropdowns (omnibox), modais (bottom sheet de confirmação, escudo, permissões) e a animação em tela cheia do fogo.
+* **Arquitetura Modular**:
+  * **Main Process (`src/main/`)**: Única fonte da verdade de todo o estado do navegador. Gerencia janelas, sessões de rede, ciclo de vida das abas, privacidade, preferências e atalhos.
+  * **Preload Seguro Geral (`src/preload/preload.js`)**: Ponte estrita via `contextBridge.exposeInMainWorld('browserAPI', ...)`. Isolação total: `contextIsolation: true`, `sandbox: true`, `nodeIntegration: false`.
+  * **Preload Isolado de Configurações (`src/preload/settings-preload.js`)**: Exclusivo para a página interna `pages/settings.html` via `contextBridge.exposeInMainWorld('settingsAPI', ...)`. Sites externos nunca recebem este preload.
+  * **Preload Seguro de Abas e Páginas Internas (`src/preload/tab-preload.js`)**: Expõe APIs restritas para páginas internas (`historyAPI`, `bookmarksAPI`, `downloadsAPI`, `warningAPI`, `certErrorAPI`) sem dependência de módulos de Node.js no renderer.
+  * **IPC Centralizado e Protegido (`src/main/ipc.js`)**: Todos os canais IPC são definidos e validados exclusivamente neste arquivo com verificação estrita de remetente (`isMainSender`, `isSettingsSender`, `isPageSender`).
+  * **Abas com `WebContentsView`**: Sem a tag legada `<webview>`. Cada aba é uma instância isolada de `WebContentsView` anexada à janela principal abaixo da barra superior (`config.TOP_BAR_HEIGHT = 76px`).
 
 ---
 
-### 1.2 Funcionalidades Principais Implementadas
-
-#### A. Navegação, Abas e Inicialização
-* Criação, seleção, fechamento, reabertura de aba fechada (<kbd>Ctrl+Shift+T</kbd>) e alternância de abas em lista reativa.
-* Reordenação nativa de abas por arrastar e soltar (HTML5 Drag & Drop) com DOM diffing sem flicker.
-* Normalização inteligente de endereços digitados (URLs, endereços locais/IPs, rotas internas `dragon://` ou busca).
-* Barra de endereços com sugestões em tempo real baseadas no histórico e favoritos via omnibox suspensa.
-* Restauração opcional de sessão anterior com validação estrita de URLs.
-
-#### B. Privacidade e Bloqueio de Rastreadores
-* Bloqueio automático de rastreadores conhecidos usando blocklist de 3.500+ domínios com resolução precisa via `tldts`.
-* Upgrade automático de HTTP para HTTPS com suporte a fallback temporário seguro com token único de curta duração.
-* Proteção estrita contra erros de certificado SSL/TLS com confirmação e token de liberação temporária por aba.
-* Injeção de cabeçalhos de privacidade (`Sec-GPC: 1`, `DNT: 1`, minimização de `Referer`) e bloqueio de cookies de terceiros.
-* Limpeza de parâmetros de rastreamento de URLs (`utm_*`, `fbclid`, `gclid`, etc.).
-* Prevenção de vazamento de IP real local através de política restritiva de WebRTC.
-* Escudo visual com contagem em tempo real de rastreadores bloqueados e botão para alternar exceções por site.
-
-#### C. Abas Privadas (Navegação Anônima)
-* Abas privadas isoladas em partições puramente em memória (`session.fromPartition('private-<id>')`).
-* Zero persistência de histórico, cookies ou caches em disco.
-* Downloads e permissões não são gravados em arquivos de histórico permanente.
-
-#### D. O Fogo do Dragão Azul (Apagar Tudo)
-* Limpeza atômica e profunda de cookies, caches, histórico, permissões e storages locais.
-* Encerramento completo de abas ativas e esvaziamento da pilha de abas fechadas.
-* Animação cinematográfica de fogo azul em Canvas/WebGL com partículas e chamas estilizadas.
-
-#### E. Bloqueador de Pop-ups e Redirecionamentos em Cadeia Rápida
-* Bloqueio automático de qualquer abertura de janela/aba via `window.open` sem gesto do usuário (`userGesture === false`).
-* Detecção de cadeias rápidas de redirecionamentos automatizados (>2 domínios em menos de 1,5s sem interação).
-* Notificação discreta com badge na toolbar permitindo ao usuário liberar a navegação manualmente caso deseje.
-* Contabilização de pop-ups bloqueados no painel do escudo e respeito integral a exceções por site (`isSiteExempt`).
-
-#### F. Classificação de Privacidade com Selo A-F
-* Cálculo determinístico puro da nota do site (`calculatePrivacyGrade`) baseado em 100 pontos (penalidades para HTTP inseguro, volume de rastreadores, pop-ups e cookies de terceiros).
-* Selo colorido exibido no cabeçalho do painel do escudo (A/B verde, C amarelo, D/F vermelho).
-
-#### G. Isolamento de Processos (Site Isolation Reforçado)
-* Garantia de que cada origem rode em processo de renderização (renderer) isolado no Chromium.
-* Flag `site-per-process` configurada explicitamente antes de `app.whenReady()`, validada no Electron ^44.9.0.
-
-#### H. Proteção contra Downloads Potencialmente Perigosos
-* Classificação em lista pura de extensões de risco executáveis (.exe, .bat, .cmd, .scr, .msi, .vbs, .ps1, etc.).
-* Pausa automática do download antes da gravação em disco e exibição de modal estilo bottom-sheet para confirmação ou cancelamento explícito.
-
-#### I. Proteção contra Fingerprinting Configurável e com Reset de Identidade (Estilo Dolphin Anty Global)
-* Mitigação multivetorial avançada inspirada em navegadores antidetect modernos, dividida em 5 grupos: Identidade do SO/Navegador/User-Agent/Timezone/Idiomas, Hardware (DPR, CPU, RAM, Touch, Resolução), GPU/WebGL (vendor, renderer e readPixels), Canvas 2D/Áudio/ClientRects/Fontes e Vetores Adicionais (WebRTC, Mídia, Vozes, Bateria, Permissões).
-* Arquitetura de configuração única e soberana: sem a complexidade de múltiplos perfis, mantendo a simplicidade e leveza do Dragon.
-* Semente persistente (32-bit seed) gerando ruído determinístico e imutável para a mesma sessão/origem.
-* Botão com um clique "Resetar Fingerprint" nas configurações: sorteia uma nova semente e preset 100% consistente e recarrega instantaneamente todas as abas web abertas.
-* Validação estrita de consistência interna (`validateFingerprintConsistency`) impedindo configurações anômalas ou impossíveis (ex.: macOS com GPU NVIDIA).
-* Isolamento garantido: proteções ativas apenas em páginas web normais (`http://` e `https://`) e nunca em páginas internas do navegador.
-
----
-
-## 2. ÁRVORE DE ARQUIVOS DO PROJETO
+## 3. ÁRVORE DE ARQUIVOS DO PROJETO
 
 ```text
 dragon/
 ├── package.json               # Configurações do projeto, scripts (test, start, dist) e electron-builder
+├── .eslintrc.json             # Regras de linting configuradas para Node.js, Electron e Browser Vanilla
 ├── README.md                  # Documentação e guia completo da arquitetura
 ├── VERIFICACAO_PROJETO.md     # Relatório de conformidade, auditoria e código completo
 ├── assets/
@@ -303,10 +155,10 @@ dragon/
 │   └── icons/
 │       └── favicon-circle.png # Ícone circular oficial do dragão azul
 ├── pages/
-│   ├── newtab.html            # Página de início rápida (busca, personalização, atalhos e glow neon)
+│   ├── newtab.html            # Página de início rápida (busca, personalização e atalhos)
 │   ├── newtab.js              # Lógica da nova aba com suporte a temas e buscador
-│   ├── settings.html          # Configurações (Principal, Personalização, Proxy, Permissões e Privacidade Avançada)
-│   ├── settings.js            # Lógica de configurações (debounce, proxy, senhas seguras, permissões e fingerprinting)
+│   ├── settings.html          # Configurações (Principal, Personalização, Proxy, Permissões e Privacidade)
+│   ├── settings.js            # Lógica de configurações (debounce, proxy, senhas seguras e permissões)
 │   ├── history.html           # Gerenciador de histórico de navegação
 │   ├── history.js             # Lógica de busca e exclusão de itens de histórico
 │   ├── bookmarks.html         # Gerenciador visual de favoritos
@@ -319,58 +171,58 @@ dragon/
 │   ├── https-warning.js       # Solicitação de token único para liberação de HTTP
 │   ├── cert-error.html        # Página interna para erros de certificados SSL/TLS
 │   └── cert-error.js          # Lógica da página de erro de certificado digital
-├── test/                      # Testes automatizados com runner nativo do Node.js (node:test) - 45 testes no total
-│   ├── clear-data.test.js     # Testes de limpeza profunda de dados e fechamento de abas (4 testes)
-│   ├── downloads.test.js      # Testes de detecção de extensões perigosas vs seguras (2 testes)
-│   ├── fingerprint.test.js    # Testes de ruído determinístico (Canvas, Áudio, ClientRects), UA, WebGL, consistência e presets (15 testes)
-│   ├── history.test.js        # Testes de histórico, exclusão de internas e updateTitle (3 testes)
-│   ├── navigation.test.js     # Testes de normalização de URLs, atalhos dragon:// e templates de busca (8 testes)
-│   ├── permissions.test.js    # Testes de getPermissionKey, rótulos e fila de permissões (3 testes)
-│   ├── privacy.test.js        # Testes de domínios base, trackers, nota A-F, redirecionamentos e blocklist (7 testes)
-│   ├── settings.test.js       # Testes de validação de esquemas e mescla com defaults (2 testes)
-│   └── tabs.test.js           # Testes de reordenação e manipulação de abas (1 teste)
+├── test/                      # Testes automatizados com runner nativo do Node.js (node:test)
+│   ├── clear-data.test.js     # Testes de limpeza profunda de dados e fechamento de abas
+│   ├── downloads.test.js      # Testes de identificação de extensões de risco
+│   ├── fingerprint.test.js    # Testes de consistência multivetorial e ruído determinístico
+│   ├── history.test.js        # Testes de histórico, exclusão de internas e updateTitle
+│   ├── navigation.test.js     # Testes de normalização de URLs e atalhos dragon://
+│   ├── permissions.test.js    # Testes de getPermissionKey, rótulos e fila de permissões
+│   ├── privacy.test.js        # Testes de domínios base, trackers, link cleaning e blocklist
+│   ├── settings.test.js       # Testes de validação de esquemas e mescla com defaults
+│   └── tabs.test.js           # Testes de reordenação e manipulação de abas
 └── src/
     ├── main/                  # Processo Principal (Node.js / Electron)
-    │   ├── main.js            # Ponto de entrada, ciclo de vida, site isolation e migração de dados
+    │   ├── main.js            # Ponto de entrada, ciclo de vida e migração de dados
     │   ├── config.js          # Constantes globais (dimensões, URLs padrão e rotas internas)
     │   ├── settings.js        # Gerenciamento de configurações, proxy e DPAPI safeStorage
     │   ├── window.js          # Janela principal, ícone nativo e integração com window-state
     │   ├── window-state.js    # Persistência de geometria da janela com validação multi-monitor
-    │   ├── tabs.js            # TabManager: abas, bloqueio de popups/redirecionamentos, find-in-page
+    │   ├── tabs.js            # TabManager: abas, popups OAuth, find-in-page e menu de contexto
     │   ├── context-menu.js    # Menu de contexto nativo com cópia, pesquisa e DevTools
     │   ├── clear-data.js      # Limpeza profunda de storage, cookies, cache e abas
-    │   ├── privacy.js         # Motor de privacidade: tldts, HTTPS, grade A-F, headers e blocklist
-    │   ├── fingerprint-protection.js # Gerador e injeção do script determinístico de fingerprinting
+    │   ├── privacy.js         # Motor de privacidade: tldts, HTTPS, headers e atualização de blocklist
     │   ├── navigation.js      # Normalização de URLs, busca e histórico
     │   ├── history.js         # Persistência de histórico de navegação (history.json)
     │   ├── bookmarks.js       # Persistência e busca de favoritos (bookmarks.json)
-    │   ├── downloads.js       # Gerenciador de downloads, will-download e pausa de risco (downloads.json)
+    │   ├── downloads.js       # Gerenciador de downloads e eventos will-download (downloads.json)
     │   ├── permissions.js     # Gerenciamento de permissões por site com persistência (permissions.json)
+    │   ├── fingerprint-protection.js # Gerador de proteções contra fingerprinting
     │   ├── session.js         # Sessão padrão, User-Agent, proxy auth e handlers de permissão
     │   ├── ipc.js             # Registro centralizado de canais IPC com validação de remetente
     │   ├── menu.js            # Menu da aplicação e aceleradores globais de teclado
     │   ├── storage.js         # Persistência atômica de arquivos JSON em app.getPath('userData')
     │   └── pure/              # Funções puras desacopladas do Electron para testes unitários
-    │       ├── download-utils.js   # Classificação pura de extensões perigosas
-    │       ├── fingerprint-utils.js # Ruído determinístico (Canvas, Áudio, ClientRects), derivação de User-Agent, WebGL, consistência e presets
-    │       ├── navigation-utils.js # Lógica pura de normalização de URLs, busca e templates (applySearchTemplate)
-    │       ├── privacy-utils.js    # Lógica pura de nota A-F, cadeias de redirecionamento e domínios
-    │       └── settings-utils.js   # Lógica pura de validação e defaults
+    │       ├── navigation-utils.js # Lógica pura de URLs e busca
+    │       ├── privacy-utils.js    # Lógica pura de domínios e link cleaning
+    │       ├── settings-utils.js   # Lógica pura de validação e defaults
+    │       ├── download-utils.js   # Lógica pura de extensões de risco
+    │       └── fingerprint-utils.js # Lógica pura de fingerprinting determinístico
     ├── preload/
     │   ├── preload.js          # Ponte segura para a janela principal (window.browserAPI)
     │   ├── settings-preload.js # Preload exclusivo para settings.html (window.settingsAPI)
-    │   └── tab-preload.js      # Preload para abas (injeção de fingerprinting e APIs de páginas internas)
+    │   └── tab-preload.js      # Preload para abas e páginas internas
     └── renderer/              # Interface Gráfica (HTML / CSS / JS do navegador)
         ├── index.html         # Estrutura visual da barra superior, escudo, find-bar e modais
         ├── app.js             # Orquestrador da interface e ouvinte de estado consolidado
         ├── components/
         │   ├── addressbar.js       # Barra de endereços, favoritos e omnibox com sugestões
         │   ├── tabs-view.js        # Abas com DOM diffing por ID e Drag & Drop para reordenação
-        │   ├── toolbar.js          # Botões de navegação, badge de redirecionamento e configurações
+        │   ├── toolbar.js          # Botões de navegação, recarregar, downloads e configurações
         │   ├── find-bar.js         # Barra de busca textual na página (Ctrl+F)
         │   ├── permission-sheet.js # Modal estilo bottom-sheet para autorização por recurso
-        │   ├── download-risk-sheet.js # Modal bottom-sheet para confirmação de download perigoso
-        │   ├── privacy-shield.js   # Escudo com contador dinâmico, selo A-F e painel de exceções
+        │   ├── download-risk-sheet.js # Modal de alerta para downloads de arquivos executáveis
+        │   ├── privacy-shield.js   # Escudo com contador dinâmico e painel de exceções
         │   ├── fire-button.js      # Botão de fogo azul na barra de navegação
         │   ├── fire-sheet.js       # Painel inferior de confirmação de apagar tudo
         │   └── fire-animation.js   # Animação WebGL/Canvas do Dragão Azul
@@ -382,9 +234,9 @@ dragon/
 
 ---
 
-## 3. CÓDIGO-FONTE COMPLETO DOS ARQUIVOS
+## 4. CÓDIGO-FONTE COMPLETO DOS ARQUIVOS
 
-### 3.1 `package.json`
+### 4.1 `package.json`
 
 ```json
 {
@@ -444,7 +296,66 @@ dragon/
 
 ---
 
-### 3.2 `src/main/config.js`
+### 4.2 `.eslintrc.json`
+
+```json
+{
+  "env": {
+    "es2022": true,
+    "node": true
+  },
+  "parserOptions": {
+    "ecmaVersion": 2022,
+    "sourceType": "script"
+  },
+  "rules": {
+    "no-undef": "error",
+    "no-unused-vars": ["warn", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }],
+    "no-const-assign": "error",
+    "no-dupe-keys": "error",
+    "no-duplicate-case": "error",
+    "no-empty": ["warn", { "allowEmptyCatch": true }],
+    "no-unreachable": "error",
+    "valid-typeof": "error"
+  },
+  "overrides": [
+    {
+      "files": ["src/renderer/**/*.js", "pages/**/*.js"],
+      "env": {
+        "browser": true,
+        "node": false
+      },
+      "globals": {
+        "browserAPI": "readonly",
+        "settingsAPI": "readonly",
+        "certErrorAPI": "readonly",
+        "httpsWarningAPI": "readonly",
+        "errorAPI": "readonly",
+        "downloadsAPI": "readonly",
+        "historyAPI": "readonly",
+        "bookmarksAPI": "readonly"
+      }
+    },
+    {
+      "files": ["src/preload/**/*.js"],
+      "env": {
+        "node": true,
+        "browser": true
+      }
+    },
+    {
+      "files": ["test/**/*.js"],
+      "env": {
+        "node": true
+      }
+    }
+  ]
+}
+```
+
+---
+
+### 4.3 `src/main/config.js`
 
 ```javascript
 // =============================================================================
@@ -501,7 +412,7 @@ module.exports = {
 
 ---
 
-### 3.3 `src/main/main.js`
+### 4.4 `src/main/main.js`
 
 ```javascript
 // =============================================================================
@@ -556,6 +467,16 @@ const ipcModule = require('./ipc');
 const menuModule = require('./menu');
 const privacy = require('./privacy');
 const history = require('./history');
+const clearData = require('./clear-data');
+
+// Tratamento centralizado de erros não capturados para estabilidade e logs consistentes
+process.on('uncaughtException', (err) => {
+  console.error('[Dragon Main] Exceção não capturada no processo principal:', err);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[Dragon Main] Rejeição de Promise não tratada:', reason);
+});
 
 // 3. Garantir instância única da aplicação
 const gotTheLock = app.requestSingleInstanceLock();
@@ -576,6 +497,14 @@ if (!gotTheLock) {
       mainWindow.focus();
     }
   });
+
+  // ETAPA 3 — Reforço explícito de Site Isolation (Process-per-site)
+  // No Chromium e Electron (incluindo Electron v44.x testado no projeto), o Site Isolation
+  // mantém documentos de diferentes origens (eTLD+1) em processos de renderer separados do SO.
+  // O switch 'site-per-process' força categoricamente essa fronteira de isolamento de processo
+  // para todas as páginas web externas, protegendo contra ataques de canal lateral (Spectre/Meltdown)
+  // e garantindo que abas de origens diferentes nunca compartilhem o mesmo espaço de memória no SO.
+  app.commandLine.appendSwitch('site-per-process');
 
   // Inicialização após o Electron estar totalmente carregado e pronto
   app.whenReady().then(() => {
@@ -607,6 +536,9 @@ if (!gotTheLock) {
 
     // Conecta o TabManager ao controlador de janela para ajustes de layout e overlay
     windowManager.setTabManager(tabManager);
+
+    // Conecta o TabManager ao módulo de configurações para recarregar abas no reset de fingerprint
+    settings.setTabManager(tabManager);
 
     // 6. Inicializa o módulo de normalização e comandos de navegação
     const navigation = navigationModule.init(context);
@@ -676,10 +608,31 @@ if (!gotTheLock) {
     callback(false);
   });
 
+  let isClearingOnExit = false;
+
   // Grava o histórico imediatamente de forma síncrona ao encerrar (Bloco 1.10)
-  app.on('before-quit', () => {
+  // e limpa todos os dados se 'clearDataOnExit' estiver ativado (ETAPA 3)
+  app.on('before-quit', async (event) => {
     if (typeof history.flushHistorySync === 'function') {
       history.flushHistorySync();
+    }
+
+    if (settings.get('clearDataOnExit') && !isClearingOnExit) {
+      isClearingOnExit = true;
+      event.preventDefault();
+      try {
+        console.log('[App] clearDataOnExit ativo: limpando dados do navegador antes de encerrar...');
+        await clearData.clearAllData({
+          mainWindow,
+          tabManager,
+          storage
+        });
+        console.log('[App] Limpeza ao fechar concluída com sucesso.');
+      } catch (err) {
+        console.error('[App] Erro na limpeza ao fechar:', err.message);
+      } finally {
+        app.quit();
+      }
     }
   });
 
@@ -694,7 +647,7 @@ if (!gotTheLock) {
 
 ---
 
-### 3.4 `src/main/window.js`
+### 4.5 `src/main/window.js`
 
 ```javascript
 // =============================================================================
@@ -867,6 +820,12 @@ function init(context) {
     mainWindow.maximize();
   }
 
+  // Segurança estrita da casca da interface: impede navegação para fora de index.html
+  mainWindow.webContents.on('will-navigate', (event) => {
+    event.preventDefault();
+  });
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+
   // Carrega a interface HTML do navegador (barra de topo, abas e navegação)
   const rendererPath = path.join(__dirname, '../renderer/index.html');
   mainWindow.loadFile(rendererPath);
@@ -930,7 +889,7 @@ module.exports = {
 
 ---
 
-### 3.5 `src/main/window-state.js`
+### 4.6 `src/main/window-state.js`
 
 ```javascript
 // =============================================================================
@@ -1052,7 +1011,7 @@ module.exports = {
 
 ---
 
-### 3.6 `src/main/tabs.js`
+### 4.7 `src/main/tabs.js`
 
 ```javascript
 // =============================================================================
@@ -1071,6 +1030,7 @@ const privacy = require('./privacy');
 const sessionModule = require('./session');
 const settings = require('./settings');
 const storage = require('./storage');
+const { isSuspiciousRedirectChain, getBaseDomain } = require('./pure/privacy-utils');
 
 // Conjunto canônico das URLs exatas das páginas internas permitidas no esquema file:
 // Compara com as URLs exatas de config.js ignorando query e hash
@@ -1471,7 +1431,9 @@ function createTab(initialUrl = null, options = { active: true, isPrivate: false
     isSettings: isSettings,
     isExplicitHttps: isExplicitHttps,
     isHtmlFullScreen: false,
-    partition: partitionName
+    partition: partitionName,
+    redirectHistory: [],
+    lastUserInteraction: Date.now()
   };
 
   tabs.push(tab);
@@ -1479,6 +1441,11 @@ function createTab(initialUrl = null, options = { active: true, isPrivate: false
   // ===========================================================================
   // LISTENERS DE EVENTOS DO WEBCONTENTS DA ABA
   // ===========================================================================
+
+  // Registra interação do usuário para distinguir redirecionamentos forçados de navegações intencionais
+  view.webContents.on('before-input-event', () => {
+    tab.lastUserInteraction = Date.now();
+  });
 
   // 1. Início de carregamento
   view.webContents.on('did-start-loading', () => {
@@ -1526,6 +1493,16 @@ function createTab(initialUrl = null, options = { active: true, isPrivate: false
     } catch {}
 
     tab.url = url;
+    let landingDomain = '';
+    try {
+      landingDomain = getBaseDomain(new URL(url).hostname);
+    } catch {}
+    if (landingDomain) {
+      tab.redirectHistory = [{ url, domain: landingDomain, timestamp: Date.now() }];
+    } else {
+      tab.redirectHistory = [];
+    }
+
     tab.canGoBack = checkCanGoBack(view.webContents);
     tab.canGoForward = checkCanGoForward(view.webContents);
     privacy.resetTabTrackerData(view.webContents.id);
@@ -1546,6 +1523,62 @@ function createTab(initialUrl = null, options = { active: true, isPrivate: false
     tab.canGoBack = checkCanGoBack(view.webContents);
     tab.canGoForward = checkCanGoForward(view.webContents);
     notifyStateChange();
+  });
+
+  // 6.1. Detecção e bloqueio de redirecionamentos em cadeia rápida sem gesto do usuário (ETAPA 1)
+  view.webContents.on('will-redirect', (event, targetUrl, isInPlace, isMainFrame) => {
+    // Inspeciona apenas navegação no frame principal
+    if (isMainFrame === false) return;
+
+    let currentHost = '';
+    try {
+      currentHost = new URL(view.webContents.getURL()).hostname;
+    } catch {}
+
+    // Se o site atual for exceção cadastrada pelo usuário, não bloqueia
+    if (currentHost && privacy.isSiteExempt(currentHost)) {
+      return;
+    }
+
+    let targetHost = '';
+    try {
+      targetHost = new URL(targetUrl).hostname;
+    } catch {}
+
+    if (targetHost && privacy.isSiteExempt(targetHost)) {
+      return;
+    }
+
+    const now = Date.now();
+    const timeSinceUser = now - (tab.lastUserInteraction || 0);
+
+    // Se mais de 1.5s desde última ação do usuário e a cadeia de redirecionamentos for suspeita
+    if (timeSinceUser > 1500 && isSuspiciousRedirectChain(tab.redirectHistory || [], targetUrl, now, 1500, 2)) {
+      event.preventDefault();
+      console.warn(`[Privacidade] Redirecionamento forçado em cadeia bloqueado na aba ${tab.id} para: ${targetUrl}`);
+
+      privacy.recordPopupBlocked(view.webContents.id);
+      notifyStateChange();
+
+      if (mainWindowRef && !mainWindowRef.isDestroyed()) {
+        mainWindowRef.webContents.send('browser:redirect-blocked', {
+          tabId: tab.id,
+          targetUrl,
+          domain: targetHost || targetUrl
+        });
+      }
+      return;
+    }
+
+    // Registra na cadeia de histórico recente
+    let targetDomain = '';
+    try {
+      targetDomain = getBaseDomain(targetHost);
+    } catch {}
+    if (targetDomain) {
+      tab.redirectHistory = (tab.redirectHistory || []).filter(item => (now - item.timestamp) < 5000);
+      tab.redirectHistory.push({ url: targetUrl, domain: targetDomain, timestamp: now });
+    }
   });
 
   // 7. Tratamento de falha no carregamento (ex: sem internet ou falha de HTTPS)
@@ -1614,7 +1647,7 @@ function createTab(initialUrl = null, options = { active: true, isPrivate: false
     }
   });
 
-  // 8. Interceptação de links com target="_blank" ou window.open
+  // 8. Interceptação de links com target="_blank" ou window.open (ETAPA 1)
   view.webContents.setWindowOpenHandler(({ url, disposition, userGesture, features }) => {
     // Permite apenas http:, https: e as páginas internas do Dragon
     if (!isAllowedNavigationUrl(url)) {
@@ -1622,7 +1655,23 @@ function createTab(initialUrl = null, options = { active: true, isPrivate: false
       return { action: 'deny' };
     }
 
-    // ITEM B: Permite janela pop-up real quando acionada por gesto do usuário (ex: Login com Google/Apple)
+    let currentHost = '';
+    try {
+      currentHost = new URL(view.webContents.getURL()).hostname;
+    } catch {}
+
+    const isExempt = currentHost ? privacy.isSiteExempt(currentHost) : false;
+
+    // ETAPA 1: Bloquear qualquer tentativa de abrir nova janela/aba quando NÃO houver userGesture,
+    // independentemente do disposition, a menos que o site esteja na lista de exceções do usuário
+    if (!userGesture && !isExempt) {
+      console.warn(`[Popups] Pop-up bloqueado sem userGesture na aba ${tabId} para URL: ${url}`);
+      privacy.recordPopupBlocked(view.webContents.id);
+      notifyStateChange();
+      return { action: 'deny' };
+    }
+
+    // Permite janela pop-up real quando acionada por gesto do usuário (ex: Login com Google/Apple)
     if (userGesture && (disposition === 'new-window' || (features && features.length > 0))) {
       const iconPath = path.join(__dirname, '../../assets/icons/favicon-circle.png');
       return {
@@ -1643,7 +1692,7 @@ function createTab(initialUrl = null, options = { active: true, isPrivate: false
       };
     }
 
-    // Links normais target="_blank" abrem como nova aba mantendo a partição privada se aplicável
+    // Links normais target="_blank" com userGesture abrem como nova aba mantendo a partição privada se aplicável
     createTab(url, { active: true, isPrivate: tab.isPrivate });
     return { action: 'deny' };
   });
@@ -1720,15 +1769,21 @@ function createTab(initialUrl = null, options = { active: true, isPrivate: false
     }
   });
 
-  // SEGURANÇA: Se for aba de configurações, impede navegação para fora dela
-  if (isSettings) {
-    view.webContents.on('will-navigate', (event, navUrl) => {
+  // SEGURANÇA: Interceptação e validação de will-navigate para todas as abas
+  view.webContents.on('will-navigate', (event, navUrl) => {
+    if (isSettings) {
       if (!navUrl.startsWith(config.SETTINGS_PAGE_URL)) {
         event.preventDefault();
         createTab(navUrl, { active: true });
       }
-    });
-  }
+      return;
+    }
+
+    if (!isAllowedNavigationUrl(navUrl)) {
+      console.warn(`[Segurança] Navegação bloqueada para protocolo não permitido via will-navigate: ${navUrl}`);
+      event.preventDefault();
+    }
+  });
 
   // Sincroniza configurações ao terminar de montar o DOM da página de nova aba
   view.webContents.on('dom-ready', () => {
@@ -1849,8 +1904,11 @@ function closeTab(tabId) {
       activePrivatePartitions.delete(removedTab.partition);
       try {
         const privSes = session.fromPartition(removedTab.partition);
-        privSes.clearStorageData();
+        privSes.clearStorageData({});
         privSes.clearCache();
+        if (typeof privSes.clearAuthCache === 'function') {
+          privSes.clearAuthCache();
+        }
       } catch (err) {
         console.warn(`[TabManager] Aviso ao limpar sessão privada de ${tabId}:`, err.message);
       }
@@ -1947,16 +2005,25 @@ function destroyAllTabs() {
   for (const tab of tabsToClose) {
     if (tab && tab.view) {
       try {
-        const wcId = tab.view.webContents.id;
-        privacy.resetTabTrackerData(wcId);
-        privacy.clearAllowedHttpHosts(wcId);
-        privacy.clearAllowedCertHosts(wcId);
-        sessionModule.cancelPendingRequestsForWebContents(wcId);
-
-        if (mainWindowRef && !mainWindowRef.isDestroyed()) {
-          mainWindowRef.contentView.removeChildView(tab.view);
+        const wc = tab.view.webContents;
+        const wcId = wc && !wc.isDestroyed() ? wc.id : null;
+        if (wcId) {
+          try { privacy.resetTabTrackerData(wcId); } catch {}
+          try { privacy.clearAllowedHttpHosts(wcId); } catch {}
+          try { privacy.clearAllowedCertHosts(wcId); } catch {}
+          try { sessionModule.cancelPendingRequestsForWebContents(wcId); } catch {}
         }
-        tab.view.webContents.close();
+
+        if (mainWindowRef && !mainWindowRef.isDestroyed() && mainWindowRef.contentView) {
+          try {
+            mainWindowRef.contentView.removeChildView(tab.view);
+          } catch {}
+        }
+        if (wc && !wc.isDestroyed()) {
+          try {
+            wc.close();
+          } catch {}
+        }
       } catch (err) {
         console.warn(`[TabManager] Aviso ao destruir aba ${tab.id}:`, err.message);
       }
@@ -2194,8 +2261,37 @@ function init(context) {
     zoomOut,
     zoomReset,
     findInPage,
-    stopFindInPage
+    stopFindInPage,
+    allowRedirect,
+    reloadAllWebTabs
   };
+}
+
+/**
+ * Permite explicitamente um redirecionamento bloqueado a pedido do usuário
+ * @param {string} targetUrl
+ */
+function allowRedirect(targetUrl) {
+  const activeTab = getActiveTab();
+  if (!activeTab || !activeTab.view || !targetUrl) return;
+  activeTab.lastUserInteraction = Date.now();
+  activeTab.redirectHistory = [];
+  activeTab.view.webContents.loadURL(targetUrl).catch(() => {});
+}
+
+/**
+ * Recarrega todas as abas web abertas (http:// ou https://),
+ * ignorando páginas internas do Dragon (file: ou dragon://).
+ */
+function reloadAllWebTabs() {
+  for (const tab of tabs) {
+    if (tab && tab.view && tab.view.webContents && !tab.view.webContents.isDestroyed()) {
+      const url = tab.url || '';
+      if (url.startsWith('http://') || url.startsWith('https://')) {
+        tab.view.webContents.reload();
+      }
+    }
+  }
 }
 
 module.exports = {
@@ -2233,14 +2329,16 @@ module.exports = {
   zoomOut,
   zoomReset,
   findInPage,
-  stopFindInPage
+  stopFindInPage,
+  allowRedirect,
+  reloadAllWebTabs
 };
 
 ```
 
 ---
 
-### 3.7 `src/main/context-menu.js`
+### 4.8 `src/main/context-menu.js`
 
 ```javascript
 // =============================================================================
@@ -2428,7 +2526,7 @@ module.exports = {
 
 ---
 
-### 3.8 `src/main/session.js`
+### 4.9 `src/main/session.js`
 
 ```javascript
 // =============================================================================
@@ -2623,16 +2721,20 @@ function configureSession(ses, isPrivate = false) {
     return permissions.getPermission(origin, key);
   };
 
-  // 4. Política de permissões por site com prompt e persistência
+  // 4. Política de permissões por site com prompt e persistência (negar por padrão)
   ses.setPermissionRequestHandler((webContents, permission, callback, details) => {
     if (ALLOWED_PERMISSIONS.has(permission)) {
-      callback(true);
+      if (details && details.isMainFrame !== false) {
+        callback(true);
+        return;
+      }
+      callback(false);
       return;
     }
 
     const permissionKey = getPermissionKey(permission, details);
     if (!permissionKey) {
-      console.warn(`[Segurança] Permissão desconhecida negada para ${details?.requestingUrl}: ${permission}`);
+      console.warn(`[Segurança] Permissão desconhecida negada por padrão para ${details?.requestingUrl}: ${permission}`);
       callback(false);
       return;
     }
@@ -2767,7 +2869,7 @@ module.exports = {
 
 ---
 
-### 3.9 `src/main/privacy.js`
+### 4.10 `src/main/privacy.js`
 
 ```javascript
 // =============================================================================
@@ -2786,12 +2888,14 @@ const fs = require('fs');
 const path = require('path');
 const { app, webContents, net } = require('electron');
 const storage = require('./storage');
+const settings = require('./settings');
 const {
   getBaseDomain,
   isLocalHost,
   isTrackerDomain: isTrackerDomainPure,
   cleanTrackingParameters,
-  isValidBlocklistHost
+  isValidBlocklistHost,
+  calculatePrivacyGrade
 } = require('./pure/privacy-utils');
 
 // Conjunto de domínios conhecidos de rastreadores carregados de assets/blocklists/trackers.txt
@@ -2800,6 +2904,10 @@ const trackerDomains = new Set();
 // Mapa em memória para rastreadores bloqueados por WebContents (aba ativa)
 // Chave: webContentsId (número) -> Valor: { count: number, domains: Set<string> }
 const tabTrackerData = new Map();
+
+// Mapa em memória para contagem de pop-ups e redirecionamentos bloqueados por WebContents
+// Chave: webContentsId (número) -> Valor: number
+const tabPopupsBlocked = new Map();
 
 // Mapa em memória para hosts temporariamente liberados para HTTP por aba
 // Chave: webContentsId (número) -> Valor: Set<string> (hostnames em minúsculas)
@@ -3256,6 +3364,15 @@ function applyPrivacy(sessionInstance) {
     headers['Sec-GPC'] = '1'; // Global Privacy Control
     headers['DNT'] = '1';     // Do Not Track
 
+    // Normalização estável de User-Agent (ETAPA 5)
+    if (settings && typeof settings.get === 'function' &&
+        settings.get('fingerprintProtectionEnabled') &&
+        settings.get('fingerprintNormalizeUA')) {
+      const genericUA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
+      headers['User-Agent'] = genericUA;
+      if (headers['user-agent']) headers['user-agent'] = genericUA;
+    }
+
     let reqHost = '';
     try {
       reqHost = new URL(details.url).hostname;
@@ -3363,35 +3480,62 @@ function applyWebRTCPolicy(webContents) {
 }
 
 /**
- * Zera o contador de rastreadores para uma aba (chamado ao navegar)
+ * Registra um pop-up ou redirecionamento forçado bloqueado na aba
+ * @param {number} webContentsId
+ */
+function recordPopupBlocked(webContentsId) {
+  if (!webContentsId) return;
+  const current = tabPopupsBlocked.get(webContentsId) || 0;
+  tabPopupsBlocked.set(webContentsId, current + 1);
+  if (onBlockedCallback) {
+    onBlockedCallback(webContentsId);
+  }
+}
+
+/**
+ * Zera o contador de rastreadores e pop-ups para uma aba (chamado ao navegar)
  * @param {number} webContentsId
  */
 function resetTabTrackerData(webContentsId) {
   if (webContentsId) {
     tabTrackerData.delete(webContentsId);
+    tabPopupsBlocked.delete(webContentsId);
   }
 }
 
 /**
- * Retorna as estatísticas de privacidade para o webContents informado
+ * Retorna as estatísticas de privacidade e nota de classificação para o webContents informado
  * @param {number} webContentsId
  * @param {string} currentUrl
- * @returns {{ count: number, domains: string[], isProtected: boolean, hostname: string }}
+ * @returns {{ count: number, domains: string[], popupsBlocked: number, grade: string, isHttps: boolean, isProtected: boolean, hostname: string }}
  */
 function getPrivacyInfoForTab(webContentsId, currentUrl) {
   let hostname = '';
+  let isHttps = true;
   try {
     if (currentUrl) {
-      hostname = new URL(currentUrl).hostname;
+      const parsed = new URL(currentUrl);
+      hostname = parsed.hostname;
+      isHttps = parsed.protocol === 'https:';
     }
   } catch {}
 
   const isProtected = Boolean(hostname && !isSiteExempt(hostname));
   const data = tabTrackerData.get(webContentsId) || { count: 0, domains: new Set() };
+  const popupsBlocked = tabPopupsBlocked.get(webContentsId) || 0;
+
+  const grade = calculatePrivacyGrade({
+    isHttps,
+    count: data.count,
+    popupsBlocked
+  });
 
   return {
     count: data.count,
     domains: Array.from(data.domains),
+    popupsBlocked,
+    grade,
+    isHttps,
     isProtected,
     hostname
   };
@@ -3430,6 +3574,7 @@ module.exports = {
   applyPrivacy,
   applyWebRTCPolicy,
   resetTabTrackerData,
+  recordPopupBlocked,
   createHttpBypassToken,
   validateAndConsumeHttpBypassToken,
   allowHttpForTab,
@@ -3454,7 +3599,7 @@ module.exports = {
 
 ---
 
-### 3.10 `src/main/settings.js`
+### 4.11 `src/main/settings.js`
 
 ```javascript
 // =============================================================================
@@ -3473,6 +3618,9 @@ const {
   mergeWithDefaults,
   isValidHttpUrl
 } = require('./pure/settings-utils');
+const {
+  pickRandomConsistentPreset
+} = require('./pure/fingerprint-utils');
 
 // -----------------------------------------------------------------------------
 // DEFINIÇÃO DOS BUSCADORES SUPORTADOS
@@ -4011,6 +4159,28 @@ async function testProxyConnection(proxyConfig = {}) {
   }
 }
 
+let tabManagerRef = null;
+
+function setTabManager(tabManager) {
+  tabManagerRef = tabManager;
+}
+
+/**
+ * Gera uma nova identidade de fingerprint aleatória e consistente,
+ * persiste em settings.json, notifica ouvintes e recarrega abas abertas.
+ * @returns {object} { success: boolean, config: object, seed: number }
+ */
+function resetFingerprint() {
+  const { config, seed } = pickRandomConsistentPreset();
+  setAll(config);
+
+  if (tabManagerRef && typeof tabManagerRef.reloadAllWebTabs === 'function') {
+    tabManagerRef.reloadAllWebTabs();
+  }
+
+  return { success: true, config, seed };
+}
+
 module.exports = {
   DEFAULT_SETTINGS,
   SEARCH_ENGINES,
@@ -4032,13 +4202,15 @@ module.exports = {
   getNewTabData,
   setProxyPassword,
   getProxyPassword,
-  testProxyConnection
+  testProxyConnection,
+  setTabManager,
+  resetFingerprint
 };
 ```
 
 ---
 
-### 3.11 `src/main/clear-data.js`
+### 4.12 `src/main/clear-data.js`
 
 ```javascript
 // =============================================================================
@@ -4164,9 +4336,17 @@ async function clearAllData(context, options = {}) {
   // Obter sessão padrão do Electron
   const defaultSession = session ? session.defaultSession : null;
 
-  // 6. Limpar cada storage separadamente em try/catch individual (sem 'quotas')
+  // 6. Limpar dados de armazenamento (clearStorageData em chamada geral e por tipo)
   if (defaultSession && typeof defaultSession.clearStorageData === 'function') {
     let anyStorageError = false;
+    try {
+      // Chamada ampla padrão recomendada pelo Electron/Chromium
+      await defaultSession.clearStorageData({});
+      console.log('[ClearData] Limpeza geral de storageData concluída na sessão padrão.');
+    } catch (err) {
+      console.warn('[ClearData] Aviso na chamada geral de clearStorageData:', err.message);
+    }
+
     for (const st of STORAGE_TYPES) {
       try {
         await defaultSession.clearStorageData({ storages: [st] });
@@ -4184,6 +4364,7 @@ async function clearAllData(context, options = {}) {
     if (defaultSession && typeof defaultSession.clearCache === 'function') {
       await defaultSession.clearCache();
       summary.cacheCleared = true;
+      console.log('[ClearData] Cache de rede da sessão padrão limpo com sucesso.');
     }
   } catch (err) {
     console.error('[ClearData] Erro ao limpar cache de rede:', err);
@@ -4195,6 +4376,7 @@ async function clearAllData(context, options = {}) {
     if (defaultSession && typeof defaultSession.clearCodeCaches === 'function') {
       await defaultSession.clearCodeCaches({});
       summary.codeCacheCleared = true;
+      console.log('[ClearData] Cache de código da sessão padrão limpo com sucesso.');
     }
   } catch (err) {
     console.error('[ClearData] Erro ao limpar cache de código:', err);
@@ -4206,6 +4388,7 @@ async function clearAllData(context, options = {}) {
     if (defaultSession && typeof defaultSession.clearAuthCache === 'function') {
       await defaultSession.clearAuthCache();
       summary.authCacheCleared = true;
+      console.log('[ClearData] Cache de autenticação HTTP limpo com sucesso.');
     }
   } catch (err) {
     console.error('[ClearData] Erro ao limpar auth cache:', err);
@@ -4217,6 +4400,7 @@ async function clearAllData(context, options = {}) {
     if (defaultSession && typeof defaultSession.clearHostResolverCache === 'function') {
       await defaultSession.clearHostResolverCache();
       summary.hostResolverCacheCleared = true;
+      console.log('[ClearData] Cache do resolvedor de host (DNS) limpo com sucesso.');
     }
   } catch (err) {
     console.error('[ClearData] Erro ao limpar host resolver cache:', err);
@@ -4228,6 +4412,7 @@ async function clearAllData(context, options = {}) {
     if (defaultSession && typeof defaultSession.clearHSTS === 'function') {
       await defaultSession.clearHSTS();
       summary.hstsCleared = true;
+      console.log('[ClearData] Políticas HSTS limpas com sucesso.');
     }
   } catch (err) {
     console.error('[ClearData] Erro ao limpar HSTS:', err);
@@ -4238,6 +4423,7 @@ async function clearAllData(context, options = {}) {
   try {
     if (storage && typeof storage.clearBrowserData === 'function') {
       summary.localFilesRemoved = storage.clearBrowserData();
+      console.log('[ClearData] Arquivos locais auxiliares removidos:', summary.localFilesRemoved);
     }
   } catch (err) {
     console.error('[ClearData] Erro ao limpar dados locais do storage:', err);
@@ -4248,6 +4434,7 @@ async function clearAllData(context, options = {}) {
   try {
     if (storage && typeof storage.writeJSON === 'function') {
       storage.writeJSON('sessions.json', { urls: [] });
+      console.log('[ClearData] sessions.json zerado no disco.');
     }
   } catch (err) {
     console.warn('[ClearData] Aviso ao zerar sessions.json:', err.message);
@@ -4273,6 +4460,12 @@ async function clearAllData(context, options = {}) {
           if (session && typeof session.fromPartition === 'function') {
             const customSes = session.fromPartition(part);
             if (customSes) {
+              try {
+                if (typeof customSes.clearStorageData === 'function') {
+                  await customSes.clearStorageData({});
+                }
+              } catch {}
+
               for (const st of STORAGE_TYPES) {
                 try {
                   if (typeof customSes.clearStorageData === 'function') {
@@ -4288,10 +4481,14 @@ async function clearAllData(context, options = {}) {
               if (typeof customSes.clearCodeCaches === 'function') {
                 await customSes.clearCodeCaches({});
               }
+              if (typeof customSes.clearAuthCache === 'function') {
+                await customSes.clearAuthCache();
+              }
               if (typeof customSes.clearHostResolverCache === 'function') {
                 await customSes.clearHostResolverCache();
               }
               summary.customPartitionsCleared++;
+              console.log(`[ClearData] Partição privada '${part}' limpa integralmente.`);
             }
           }
         } catch (e) {
@@ -4321,7 +4518,7 @@ module.exports = {
 
 ---
 
-### 3.12 `src/main/storage.js`
+### 4.13 `src/main/storage.js`
 
 ```javascript
 // =============================================================================
@@ -4346,14 +4543,6 @@ function init(context) {
   if (!fs.existsSync(storageDir)) {
     fs.mkdirSync(storageDir, { recursive: true });
   }
-
-  // ---------------------------------------------------------------------------
-  // [PONTO DE EXTENSÃO: INICIALIZAÇÃO DE BANCOS DE DADOS OU ARQUIVOS LOCAIS]
-  // Aqui você pode criar arquivos padrão na primeira execução, por exemplo:
-  // - history.json      -> para armazenar histórico de navegação
-  // - bookmarks.json    -> para armazenar links favoritos
-  // - settings.json     -> para armazenar preferências (tema, zoom, mecanismo de busca)
-  // ---------------------------------------------------------------------------
 }
 
 /**
@@ -4423,27 +4612,6 @@ function writeJSON(filename, data) {
   }
 }
 
-// -----------------------------------------------------------------------------
-// [PONTO DE EXTENSÃO: MÉTODOS DE HISTÓRICO]
-// Exemplo de funções futuras para implementar:
-// - addHistoryEntry({ url, title, timestamp })
-// - getHistory(limit)
-// - clearHistory()
-// -----------------------------------------------------------------------------
-
-// -----------------------------------------------------------------------------
-// [PONTO DE EXTENSÃO: MÉTODOS DE FAVORITOS]
-// Exemplo de funções futuras para implementar:
-// - addBookmark({ id, title, url, createdAt })
-// - removeBookmark(id)
-// - getBookmarks()
-// -----------------------------------------------------------------------------
-
-// -----------------------------------------------------------------------------
-// [LIMPEZA DE DADOS SALVOS DO NAVEGADOR]
-// Remove os arquivos locais gerados pela navegação do usuário (histórico, etc.)
-// -----------------------------------------------------------------------------
-
 /**
  * Remove com segurança todos os arquivos JSON de dados gerados pelo navegador
  * (histórico de navegação, lista de downloads, miniaturas, etc.)
@@ -4484,7 +4652,7 @@ module.exports = {
 
 ---
 
-### 3.13 `src/main/navigation.js`
+### 4.14 `src/main/navigation.js`
 
 ```javascript
 // =============================================================================
@@ -4515,7 +4683,7 @@ function normalizeInput(rawInput) {
     downloadsUrl: DOWNLOADS_PAGE_URL,
     historyUrl: HISTORY_PAGE_URL,
     bookmarksUrl: BOOKMARKS_PAGE_URL,
-    searchTemplate: settings.getSearchUrl('%s')
+    searchTemplate: settings.getSearchUrlTemplate()
   });
 }
 
@@ -4679,7 +4847,7 @@ module.exports = {
 
 ---
 
-### 3.14 `src/main/history.js`
+### 4.15 `src/main/history.js`
 
 ```javascript
 // =============================================================================
@@ -4865,7 +5033,7 @@ module.exports = {
 
 ---
 
-### 3.15 `src/main/bookmarks.js`
+### 4.16 `src/main/bookmarks.js`
 
 ```javascript
 // =============================================================================
@@ -5013,7 +5181,7 @@ module.exports = {
 
 ---
 
-### 3.16 `src/main/downloads.js`
+### 4.17 `src/main/downloads.js`
 
 ```javascript
 // =============================================================================
@@ -5026,11 +5194,14 @@ const fs = require('fs');
 const path = require('path');
 const { app, shell } = require('electron');
 const storage = require('./storage');
+const { isRiskyDownload } = require('./pure/download-utils');
 
 const DOWNLOADS_FILENAME = 'downloads.json';
-const activeDownloads = new Map(); // id -> DownloadItem
+const activeDownloads = new Map(); // id -> { item, record, isPrivate }
+const pendingRiskDownloads = new Map(); // id -> { item, savePath, finalFilename, downloadRecord, isPrivate }
 let downloadsHistory = null;
 let onDownloadUpdateCallback = null;
+let onDownloadRiskPromptCallback = null;
 
 function getNonConflictingPath(saveDirectory, filename) {
   let savePath = path.join(saveDirectory, filename);
@@ -5070,10 +5241,51 @@ function setDownloadUpdateListener(callback) {
   onDownloadUpdateCallback = callback;
 }
 
+/**
+ * Registra o ouvinte para prompt de confirmação de download perigoso
+ * @param {Function} callback
+ */
+function setDownloadRiskListener(callback) {
+  onDownloadRiskPromptCallback = callback;
+}
+
 function notifyUpdate(downloadData) {
   if (typeof onDownloadUpdateCallback === 'function') {
     onDownloadUpdateCallback(downloadData);
   }
+}
+
+/**
+ * Anexa listeners de progresso e finalização para um DownloadItem do Electron
+ */
+function attachDownloadListeners(item, downloadRecord, downloadId, isPrivate) {
+  item.on('updated', (updateEvent, state) => {
+    downloadRecord.receivedBytes = item.getReceivedBytes();
+    downloadRecord.totalBytes = item.getTotalBytes() || downloadRecord.totalBytes;
+    downloadRecord.state = state;
+    notifyUpdate({ ...downloadRecord });
+  });
+
+  item.once('done', (doneEvent, state) => {
+    activeDownloads.delete(downloadId);
+    pendingRiskDownloads.delete(downloadId);
+    downloadRecord.receivedBytes = item.getReceivedBytes();
+    downloadRecord.totalBytes = item.getTotalBytes() || downloadRecord.receivedBytes;
+    downloadRecord.state = state; // 'completed' | 'cancelled' | 'interrupted'
+    downloadRecord.endTime = Date.now();
+
+    // Privacidade: downloads iniciados em sessão privada NÃO são persistidos no histórico
+    if (!isPrivate) {
+      loadHistory();
+      downloadsHistory.unshift({ ...downloadRecord });
+      if (downloadsHistory.length > 200) {
+        downloadsHistory.length = 200;
+      }
+      persistHistory();
+    }
+
+    notifyUpdate({ ...downloadRecord });
+  });
 }
 
 /**
@@ -5090,8 +5302,6 @@ function registerSessionDownloads(ses, isPrivate = false) {
     const saveDirectory = app.getPath('downloads');
     const { savePath, finalFilename } = getNonConflictingPath(saveDirectory, originalFilename);
 
-    item.setSavePath(savePath);
-
     const downloadRecord = {
       id: downloadId,
       filename: finalFilename,
@@ -5105,37 +5315,85 @@ function registerSessionDownloads(ses, isPrivate = false) {
       isPrivate: Boolean(isPrivate)
     };
 
-    activeDownloads.set(downloadId, { item, record: downloadRecord, isPrivate: Boolean(isPrivate) });
+    attachDownloadListeners(item, downloadRecord, downloadId, isPrivate);
 
-    notifyUpdate({ ...downloadRecord });
+    // ETAPA 4: Verificação de risco antes de definir savePath
+    const isRisky = isRiskyDownload(originalFilename);
+    if (isRisky) {
+      item.pause();
 
-    item.on('updated', (updateEvent, state) => {
-      downloadRecord.receivedBytes = item.getReceivedBytes();
-      downloadRecord.totalBytes = item.getTotalBytes() || downloadRecord.totalBytes;
-      downloadRecord.state = state;
-      notifyUpdate({ ...downloadRecord });
-    });
+      let originDomain = '';
+      try {
+        originDomain = new URL(item.getURL()).hostname;
+      } catch {}
 
-    item.once('done', (doneEvent, state) => {
-      activeDownloads.delete(downloadId);
-      downloadRecord.receivedBytes = item.getReceivedBytes();
-      downloadRecord.totalBytes = item.getTotalBytes() || downloadRecord.receivedBytes;
-      downloadRecord.state = state; // 'completed' | 'cancelled' | 'interrupted'
-      downloadRecord.endTime = Date.now();
+      pendingRiskDownloads.set(downloadId, {
+        item,
+        savePath,
+        finalFilename,
+        downloadRecord,
+        isPrivate
+      });
 
-      // Privacidade: downloads iniciados em sessão privada NÃO são persistidos no histórico
-      if (!isPrivate) {
-        loadHistory();
-        downloadsHistory.unshift({ ...downloadRecord });
-        if (downloadsHistory.length > 200) {
-          downloadsHistory.length = 200;
-        }
-        persistHistory();
+      console.warn(`[Downloads] Arquivo potencialmente perigoso detectado: ${originalFilename} (${originDomain}). Aguardando confirmação do usuário.`);
+
+      if (typeof onDownloadRiskPromptCallback === 'function') {
+        onDownloadRiskPromptCallback({
+          downloadId,
+          filename: finalFilename,
+          domain: originDomain || 'Origem desconhecida'
+        });
       }
+      return;
+    }
 
-      notifyUpdate({ ...downloadRecord });
-    });
+    // Extensões seguras continuam normalmente
+    item.setSavePath(savePath);
+    activeDownloads.set(downloadId, { item, record: downloadRecord, isPrivate: Boolean(isPrivate) });
+    notifyUpdate({ ...downloadRecord });
   });
+}
+
+/**
+ * Confirma e prossegue com o download pausado por risco
+ * @param {string} downloadId
+ * @returns {boolean}
+ */
+function confirmRiskDownload(downloadId) {
+  const entry = pendingRiskDownloads.get(downloadId);
+  if (!entry || !entry.item || entry.item.isDestroyed()) {
+    pendingRiskDownloads.delete(downloadId);
+    return false;
+  }
+
+  pendingRiskDownloads.delete(downloadId);
+  entry.item.setSavePath(entry.savePath);
+  activeDownloads.set(downloadId, {
+    item: entry.item,
+    record: entry.downloadRecord,
+    isPrivate: entry.isPrivate
+  });
+
+  entry.item.resume();
+  notifyUpdate({ ...entry.downloadRecord, state: 'progressing' });
+  return true;
+}
+
+/**
+ * Cancela e descarta o download pausado por risco
+ * @param {string} downloadId
+ * @returns {boolean}
+ */
+function cancelRiskDownload(downloadId) {
+  const entry = pendingRiskDownloads.get(downloadId);
+  if (!entry) return false;
+
+  pendingRiskDownloads.delete(downloadId);
+  if (entry.item && !entry.item.isDestroyed()) {
+    entry.item.cancel();
+  }
+  notifyUpdate({ ...entry.downloadRecord, state: 'cancelled' });
+  return true;
 }
 
 /**
@@ -5201,6 +5459,9 @@ function clearHistory() {
 module.exports = {
   registerSessionDownloads,
   setDownloadUpdateListener,
+  setDownloadRiskListener,
+  confirmRiskDownload,
+  cancelRiskDownload,
   cancelDownload,
   openFile,
   showInFolder,
@@ -5211,7 +5472,7 @@ module.exports = {
 
 ---
 
-### 3.17 `src/main/permissions.js`
+### 4.18 `src/main/permissions.js`
 
 ```javascript
 // =============================================================================
@@ -5354,7 +5615,439 @@ module.exports = {
 
 ---
 
-### 3.18 `src/main/ipc.js`
+### 4.19 `src/main/fingerprint-protection.js`
+
+```javascript
+// =============================================================================
+// src/main/fingerprint-protection.js
+// Proteção contra Fingerprinting Avançada do Navegador Dragon
+// Gera script isolado e determinístico com interceptações completas
+// =============================================================================
+
+const settings = require('./settings');
+const fingerprintUtils = require('./pure/fingerprint-utils');
+const {
+  OS_PRESETS,
+  BROWSER_PRESETS,
+  GPU_PRESETS,
+  SCREEN_PRESETS,
+  LOCALE_TIMEZONE_MAP,
+  TIMEZONE_PRESETS,
+  deriveUserAgent,
+  derivePlatform,
+  deriveDevicePixelRatio,
+  deriveWebglRenderer,
+  buildFingerprintSeed,
+  getFingerprintOptions,
+  validateFingerprintConsistency
+} = fingerprintUtils;
+
+/**
+ * Mapeamento de offset em minutos para fusos horários comuns
+ */
+const TIMEZONE_OFFSET_MAP = {
+  'UTC': 0,
+  'Europe/London': 0,
+  'Europe/Paris': -60,
+  'Europe/Berlin': -60,
+  'Europe/Madrid': -60,
+  'America/Sao_Paulo': 180,
+  'America/Fortaleza': 180,
+  'America/Cuiaba': 240,
+  'America/Manaus': 240,
+  'America/New_York': 300,
+  'America/Chicago': 360,
+  'America/Denver': 420,
+  'America/Los_Angeles': 480,
+  'Asia/Tokyo': -540
+};
+
+/**
+ * Retorna o script JS a ser injetado em páginas web (WebContentsView).
+ * Todas as modificações respeitam estritamente as preferências salvas pelo usuário.
+ * NUNCA injetado em páginas internas do Dragon.
+ *
+ * @returns {string} Código JavaScript auto-executável
+ */
+function getInjectionScript() {
+  const isEnabled = Boolean(settings.get('fingerprintProtectionEnabled'));
+  if (!isEnabled) {
+    return '';
+  }
+
+  const allSettings = settings.getAll ? settings.getAll() : settings.get();
+  const seed = buildFingerprintSeed(allSettings);
+
+  const os = allSettings.fpOs || 'windows11';
+  const browser = allSettings.fpBrowser || 'chrome';
+  const osPreset = OS_PRESETS[os] || OS_PRESETS.windows11;
+
+  // 1. User-Agent e Plataforma
+  let userAgent = allSettings.fpUserAgent;
+  if (!userAgent || userAgent === 'auto') {
+    userAgent = deriveUserAgent(os, browser);
+  }
+  let platform = allSettings.fpPlatform;
+  if (!platform || platform === 'auto') {
+    platform = derivePlatform(os);
+  }
+
+  // 2. Resolução e DPR
+  const resolutionId = allSettings.fpScreenResolution || '1920x1080';
+  const resPreset = SCREEN_PRESETS.find(p => p.id === resolutionId) || SCREEN_PRESETS[0];
+  const width = resPreset.width;
+  const height = resPreset.height;
+  const availHeight = height > 768 ? height - 40 : height;
+
+  let dpr = allSettings.fpDevicePixelRatio;
+  if (dpr === 'auto' || !dpr) {
+    dpr = deriveDevicePixelRatio(resolutionId);
+  } else {
+    dpr = Number(dpr) || 1;
+  }
+
+  // 3. Hardware (CPU, RAM, Touch)
+  const cores = Number(allSettings.fpHardwareConcurrency) || 8;
+  const memory = Number(allSettings.fpDeviceMemory) || 8;
+  const touch = Boolean(allSettings.fpTouchSupport);
+
+  // 4. GPU / WebGL
+  let gpuVendor = allSettings.fpWebglVendor;
+  let gpuRenderer = allSettings.fpWebglRenderer;
+  if (!gpuVendor || gpuVendor === 'auto' || !gpuRenderer || gpuRenderer === 'auto') {
+    const derivedGpu = deriveWebglRenderer(os, gpuVendor);
+    gpuVendor = gpuVendor && gpuVendor !== 'auto' ? gpuVendor : derivedGpu.vendor;
+    gpuRenderer = gpuRenderer && gpuRenderer !== 'auto' ? gpuRenderer : derivedGpu.renderer;
+  }
+  const webglImageMode = allSettings.fpWebglImageMode || 'noise';
+
+  // 5. Idioma e Fuso Horário
+  const locale = allSettings.fpLocale || 'pt-BR';
+  const timezone = allSettings.fpTimezone || 'America/Sao_Paulo';
+  const tzOffset = Object.prototype.hasOwnProperty.call(TIMEZONE_OFFSET_MAP, timezone)
+    ? TIMEZONE_OFFSET_MAP[timezone]
+    : 0;
+
+  // 6. Modos por Vetor
+  const canvasMode = allSettings.fpCanvasMode || 'noise';
+  const audioMode = allSettings.fpAudioMode || 'noise';
+  const clientRectsMode = allSettings.fpClientRectsMode || 'noise';
+  const fontsMode = allSettings.fpFontsMode || 'mask';
+  const batteryMode = allSettings.fpBatteryMode || 'mask';
+  const speechVoicesMode = allSettings.fpSpeechVoices || 'mask';
+  const permissionsMode = allSettings.fpPermissionsMode || 'mask';
+  const webrtcMode = allSettings.fpWebrtcMode || 'proxy';
+  const mediaCount = Number(allSettings.fpMediaDevicesCount) || 2;
+
+  const allowedFonts = JSON.stringify(osPreset.defaultFonts || ['Arial', 'Helvetica', 'Times New Roman']);
+
+  return `
+(function() {
+  'use strict';
+  try {
+    const SEED = ${seed};
+
+    // Helper LCG determinístico
+    function prng(offset) {
+      let s = (Math.imul(SEED ^ (offset || 0), 0x45d9f3b) >>> 0);
+      s = (Math.imul(1664525, s) + 1013904223) >>> 0;
+      return (s / 4294967296);
+    }
+
+    // =========================================================================
+    // GRUPO A: IDENTIDADE DO SISTEMA (UA, Plataforma, Locale, Timezone)
+    // =========================================================================
+    try {
+      const ua = ${JSON.stringify(userAgent)};
+      const plat = ${JSON.stringify(platform)};
+      const loc = ${JSON.stringify(locale)};
+      const tz = ${JSON.stringify(timezone)};
+      const tzOff = ${tzOffset};
+
+      Object.defineProperty(navigator, 'userAgent', { get: () => ua, configurable: true });
+      Object.defineProperty(navigator, 'appVersion', { get: () => ua.replace(/^Mozilla\\//, ''), configurable: true });
+      Object.defineProperty(navigator, 'platform', { get: () => plat, configurable: true });
+      Object.defineProperty(navigator, 'language', { get: () => loc, configurable: true });
+      Object.defineProperty(navigator, 'languages', { get: () => [loc, loc.split('-')[0], 'en-US', 'en'], configurable: true });
+
+      // Spoof de Timezone
+      const origResolvedOptions = Intl.DateTimeFormat.prototype.resolvedOptions;
+      Intl.DateTimeFormat.prototype.resolvedOptions = function() {
+        const opts = origResolvedOptions.apply(this, arguments);
+        opts.timeZone = tz;
+        return opts;
+      };
+      Date.prototype.getTimezoneOffset = function() {
+        return tzOff;
+      };
+    } catch (e) {}
+
+    // =========================================================================
+    // GRUPO B: HARDWARE (Resolução, DPR, Cores, RAM, Touch)
+    // =========================================================================
+    try {
+      const scrW = ${width};
+      const scrH = ${height};
+      const availH = ${availHeight};
+      const dprVal = ${dpr};
+      const coresCount = ${cores};
+      const memoryGb = ${memory};
+      const touchEnabled = ${touch};
+
+      Object.defineProperty(window.screen, 'width', { get: () => scrW, configurable: true });
+      Object.defineProperty(window.screen, 'height', { get: () => scrH, configurable: true });
+      Object.defineProperty(window.screen, 'availWidth', { get: () => scrW, configurable: true });
+      Object.defineProperty(window.screen, 'availHeight', { get: () => availH, configurable: true });
+      Object.defineProperty(window.screen, 'colorDepth', { get: () => 24, configurable: true });
+      Object.defineProperty(window.screen, 'pixelDepth', { get: () => 24, configurable: true });
+
+      Object.defineProperty(window, 'devicePixelRatio', { get: () => dprVal, configurable: true });
+      Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => coresCount, configurable: true });
+      Object.defineProperty(navigator, 'deviceMemory', { get: () => memoryGb, configurable: true });
+      Object.defineProperty(navigator, 'maxTouchPoints', { get: () => (touchEnabled ? 5 : 0), configurable: true });
+    } catch (e) {}
+
+    // =========================================================================
+    // GRUPO C: GPU E WEBGL (Vendor, Renderer, readPixels)
+    // =========================================================================
+    try {
+      const targetVendor = ${JSON.stringify(gpuVendor)};
+      const targetRenderer = ${JSON.stringify(gpuRenderer)};
+      const webglMode = ${JSON.stringify(webglImageMode)};
+
+      function patchGl(proto) {
+        if (!proto || !proto.getParameter) return;
+        const origGetParam = proto.getParameter;
+        proto.getParameter = function(param) {
+          // 0x9245 = UNMASKED_VENDOR_WEBGL, 0x9246 = UNMASKED_RENDERER_WEBGL
+          if (param === 0x9245) return targetVendor;
+          if (param === 0x9246) return targetRenderer;
+          return origGetParam.apply(this, arguments);
+        };
+
+        if (webglMode === 'noise') {
+          const origReadPixels = proto.readPixels;
+          proto.readPixels = function(x, y, w, h, format, type, pixels) {
+            origReadPixels.apply(this, arguments);
+            if (pixels && pixels.length) {
+              for (let i = 0; i < pixels.length; i += 16) {
+                if (pixels[i + 3] === 0) continue;
+                const hVal = (Math.imul(i ^ SEED, 0x45d9f3b) >>> 0) % 3;
+                const d = (hVal === 0 ? -1 : (hVal === 1 ? 1 : 0));
+                if (d !== 0) {
+                  const ch = i + (hVal % 3);
+                  pixels[ch] = Math.max(0, Math.min(255, pixels[ch] + d));
+                }
+              }
+            }
+          };
+        }
+      }
+
+      if (typeof WebGLRenderingContext !== 'undefined') patchGl(WebGLRenderingContext.prototype);
+      if (typeof WebGL2RenderingContext !== 'undefined') patchGl(WebGL2RenderingContext.prototype);
+    } catch (e) {}
+
+    // =========================================================================
+    // GRUPO D: CANVAS, ÁUDIO, CLIENTRECTS, FONTES
+    // =========================================================================
+    // Canvas
+    try {
+      const cMode = ${JSON.stringify(canvasMode)};
+      if (cMode === 'noise') {
+        const origGetImageData = CanvasRenderingContext2D.prototype.getImageData;
+        CanvasRenderingContext2D.prototype.getImageData = function(sx, sy, sw, sh) {
+          const imgData = origGetImageData.apply(this, arguments);
+          try {
+            const d = imgData.data;
+            for (let i = 0; i < d.length; i += 16) {
+              if (d[i + 3] === 0) continue;
+              const h = (Math.imul(i ^ SEED, 0x45d9f3b) >>> 0) % 3;
+              const delta = (h === 0 ? -1 : (h === 1 ? 1 : 0));
+              if (delta !== 0) {
+                const idx = i + (h % 3);
+                d[idx] = Math.max(0, Math.min(255, d[idx] + delta));
+              }
+            }
+          } catch (err) {}
+          return imgData;
+        };
+
+        const origToDataURL = HTMLCanvasElement.prototype.toDataURL;
+        HTMLCanvasElement.prototype.toDataURL = function() {
+          try {
+            const ctx = this.getContext('2d');
+            if (ctx && this.width > 0 && this.height > 0) {
+              const w = Math.min(this.width, 32);
+              const h = Math.min(this.height, 32);
+              const imgData = ctx.getImageData(0, 0, w, h);
+              ctx.putImageData(imgData, 0, 0);
+            }
+          } catch (err) {}
+          return origToDataURL.apply(this, arguments);
+        };
+      }
+    } catch (e) {}
+
+    // Áudio
+    try {
+      const aMode = ${JSON.stringify(audioMode)};
+      if (aMode === 'noise') {
+        if (typeof AudioBuffer !== 'undefined' && AudioBuffer.prototype.getChannelData) {
+          const origGetChannelData = AudioBuffer.prototype.getChannelData;
+          AudioBuffer.prototype.getChannelData = function() {
+            const channel = origGetChannelData.apply(this, arguments);
+            try {
+              for (let i = 0; i < channel.length; i += 32) {
+                const h = (Math.imul(i ^ SEED, 0x27d4eb2d) >>> 0) % 5;
+                channel[i] = channel[i] + (h - 2) * 0.00002;
+              }
+            } catch (err) {}
+            return channel;
+          };
+        }
+      }
+    } catch (e) {}
+
+    // ClientRects
+    try {
+      const crMode = ${JSON.stringify(clientRectsMode)};
+      if (crMode === 'noise') {
+        const origGetBoundingClientRect = Element.prototype.getBoundingClientRect;
+        Element.prototype.getBoundingClientRect = function() {
+          const r = origGetBoundingClientRect.apply(this, arguments);
+          const delta = ((SEED % 3) - 1) * 0.05;
+          return new DOMRect(r.x + delta, r.y + delta, r.width + delta, r.height + delta);
+        };
+      } else if (crMode === 'mask') {
+        const origGetBoundingClientRect = Element.prototype.getBoundingClientRect;
+        Element.prototype.getBoundingClientRect = function() {
+          const r = origGetBoundingClientRect.apply(this, arguments);
+          return new DOMRect(Math.round(r.x), Math.round(r.y), Math.round(r.width), Math.round(r.height));
+        };
+      }
+    } catch (e) {}
+
+    // Fontes
+    try {
+      const fMode = ${JSON.stringify(fontsMode)};
+      if (fMode === 'mask' && document.fonts && typeof document.fonts.check === 'function') {
+        const allowed = new Set(${allowedFonts}.map(f => f.toLowerCase()));
+        allowed.add('sans-serif');
+        allowed.add('serif');
+        allowed.add('monospace');
+        const origCheck = document.fonts.check.bind(document.fonts);
+        document.fonts.check = function(font, text) {
+          if (typeof font === 'string') {
+            const clean = font.replace(/[0-9pxptemrem%]/g, '').replace(/['"]/g, '').trim().toLowerCase();
+            if (clean && !allowed.has(clean)) {
+              return false;
+            }
+          }
+          return origCheck(font, text);
+        };
+      }
+    } catch (e) {}
+
+    // =========================================================================
+    // GRUPO E: BATERIA, DISPOSITIVOS, VOZES E PERMISSÕES
+    // =========================================================================
+    try {
+      const bMode = ${JSON.stringify(batteryMode)};
+      if (bMode === 'mask' && navigator.getBattery) {
+        navigator.getBattery = function() {
+          return Promise.resolve({
+            charging: true,
+            chargingTime: 0,
+            dischargingTime: Infinity,
+            level: 1.0,
+            addEventListener: function() {},
+            removeEventListener: function() {},
+            dispatchEvent: function() { return false; }
+          });
+        };
+      }
+
+      const pMode = ${JSON.stringify(permissionsMode)};
+      if (pMode === 'mask' && navigator.permissions && navigator.permissions.query) {
+        const origQuery = navigator.permissions.query.bind(navigator.permissions);
+        navigator.permissions.query = function(desc) {
+          return Promise.resolve({
+            state: 'prompt',
+            name: desc ? desc.name : 'unknown',
+            onchange: null,
+            addEventListener: function() {},
+            removeEventListener: function() {}
+          });
+        };
+      }
+
+      const mCount = ${mediaCount};
+      if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
+        navigator.mediaDevices.enumerateDevices = function() {
+          const devs = [];
+          if (mCount >= 1) devs.push({ deviceId: 'default', kind: 'audioinput', label: '', groupId: 'grp1' });
+          if (mCount >= 2) devs.push({ deviceId: 'default', kind: 'videoinput', label: '', groupId: 'grp2' });
+          if (mCount >= 3) devs.push({ deviceId: 'default', kind: 'audiooutput', label: '', groupId: 'grp1' });
+          return Promise.resolve(devs);
+        };
+      }
+
+      const wMode = ${JSON.stringify(webrtcMode)};
+      if (wMode === 'disabled') {
+        try {
+          if (typeof window.RTCPeerConnection !== 'undefined') window.RTCPeerConnection = undefined;
+          if (typeof window.webkitRTCPeerConnection !== 'undefined') window.webkitRTCPeerConnection = undefined;
+          if (typeof window.RTCSessionDescription !== 'undefined') window.RTCSessionDescription = undefined;
+          if (typeof window.RTCIceCandidate !== 'undefined') window.RTCIceCandidate = undefined;
+        } catch (e) {}
+      }
+
+      const svMode = ${JSON.stringify(speechVoicesMode)};
+      if (svMode === 'mask' && typeof window.speechSynthesis !== 'undefined') {
+        const targetOs = ${JSON.stringify(os)};
+        const simulatedVoices = (targetOs === 'macos')
+          ? [
+              { name: 'Alex', lang: 'en-US', default: true, localService: true, voiceURI: 'Alex' },
+              { name: 'Samantha', lang: 'en-US', default: false, localService: true, voiceURI: 'Samantha' },
+              { name: 'Luciana', lang: 'pt-BR', default: false, localService: true, voiceURI: 'Luciana' }
+            ]
+          : [
+              { name: 'Microsoft Maria - Portuguese (Brazil)', lang: 'pt-BR', default: true, localService: true, voiceURI: 'Microsoft Maria' },
+              { name: 'Microsoft David - English (United States)', lang: 'en-US', default: false, localService: true, voiceURI: 'Microsoft David' },
+              { name: 'Microsoft Zira - English (United States)', lang: 'en-US', default: false, localService: true, voiceURI: 'Microsoft Zira' }
+            ];
+        speechSynthesis.getVoices = function() {
+          return simulatedVoices;
+        };
+      }
+    } catch (e) {}
+
+  } catch (err) {}
+})();
+  `;
+}
+
+function isFingerprintProtectionEnabled() {
+  return Boolean(settings.get('fingerprintProtectionEnabled'));
+}
+
+function shouldNormalizeUA() {
+  return isFingerprintProtectionEnabled();
+}
+
+module.exports = {
+  getInjectionScript,
+  isFingerprintProtectionEnabled,
+  shouldNormalizeUA,
+  getFingerprintOptions,
+  validateFingerprintConsistency
+};
+```
+
+---
+
+### 4.20 `src/main/ipc.js`
 
 ```javascript
 // =============================================================================
@@ -5375,6 +6068,7 @@ const permissions = require('./permissions');
 const privacy = require('./privacy');
 const sessionModule = require('./session');
 const settings = require('./settings');
+const fingerprintProtection = require('./fingerprint-protection');
 
 /**
  * Validação rigorosa para garantir que o remetente do IPC é estritamente
@@ -5483,7 +6177,8 @@ function init(context) {
       console.warn('[Segurança] IPC ignorado em app:open-settings: remetente não é a janela principal');
       return null;
     }
-    return tabManager.openSettingsTab();
+    const tab = tabManager.openSettingsTab();
+    return tab ? tab.id : null;
   });
 
   ipcMain.handle('app:open-downloads', (event) => {
@@ -5491,7 +6186,8 @@ function init(context) {
       console.warn('[Segurança] IPC ignorado em app:open-downloads: remetente não é a janela principal');
       return null;
     }
-    return tabManager.openDownloadsTab();
+    const tab = tabManager.openDownloadsTab();
+    return tab ? tab.id : null;
   });
 
   ipcMain.handle('app:open-history', (event) => {
@@ -5499,7 +6195,8 @@ function init(context) {
       console.warn('[Segurança] IPC ignorado em app:open-history: remetente não é a janela principal');
       return null;
     }
-    return tabManager.openHistoryTab();
+    const tab = tabManager.openHistoryTab();
+    return tab ? tab.id : null;
   });
 
   ipcMain.handle('app:open-bookmarks', (event) => {
@@ -5507,7 +6204,8 @@ function init(context) {
       console.warn('[Segurança] IPC ignorado em app:open-bookmarks: remetente não é a janela principal');
       return null;
     }
-    return tabManager.openBookmarksTab();
+    const tab = tabManager.openBookmarksTab();
+    return tab ? tab.id : null;
   });
 
   // CANAL: window:set-findbar-open
@@ -5658,6 +6356,19 @@ function init(context) {
   });
 
   // ---------------------------------------------------------------------------
+  // CANAL: navigation:allow-redirect
+  // Finalidade: Permite um redirecionamento que havia sido bloqueado por segurança.
+  // ---------------------------------------------------------------------------
+  ipcMain.handle('navigation:allow-redirect', (event, targetUrl) => {
+    if (!isMainSender(event, mainWindow)) return false;
+    if (typeof targetUrl !== 'string' || !tabManager.isAllowedNavigationUrl(targetUrl)) {
+      return false;
+    }
+    tabManager.allowRedirect(targetUrl);
+    return true;
+  });
+
+  // ---------------------------------------------------------------------------
   // CANAL: navigation:back
   // Finalidade: Retorna para a página anterior no histórico da aba ativa.
   // ---------------------------------------------------------------------------
@@ -5777,6 +6488,9 @@ function init(context) {
     menu.setIsClearing(false);
     windowManager.hideOverlay();
     const newTab = tabManager.createTab(config.NEW_TAB_URL, { active: true });
+    if (typeof tabManager.notifyStateChange === 'function') {
+      tabManager.notifyStateChange();
+    }
     return { success: true, tabId: newTab ? newTab.id : null };
   });
 
@@ -5920,6 +6634,34 @@ function init(context) {
     return permissions.revokePermission(origin, permKey);
   });
 
+  // CANAL: fingerprint:reset
+  // Sorteia nova identidade de fingerprint aleatória e consistente, persiste e recarrega abas
+  ipcMain.handle('fingerprint:reset', (event) => {
+    if (!isSettingsSender(event)) {
+      console.warn('[Segurança] Requisição não autorizada em fingerprint:reset');
+      return null;
+    }
+    const result = settings.resetFingerprint();
+    if (tabManager && typeof tabManager.reloadAllWebTabs === 'function') {
+      tabManager.reloadAllWebTabs();
+    }
+    return result;
+  });
+
+  // CANAL: fingerprint:get-options
+  // Retorna listas de opções e presets para popular dropdowns na página de configurações
+  ipcMain.handle('fingerprint:get-options', (event) => {
+    if (!isSettingsSender(event)) return null;
+    return fingerprintProtection.getFingerprintOptions();
+  });
+
+  // CANAL: fingerprint:validate
+  // Valida consistência interna das configurações de fingerprint
+  ipcMain.handle('fingerprint:validate', (event, config) => {
+    if (!isSettingsSender(event)) return { valid: true, errors: [], warnings: [] };
+    return fingerprintProtection.validateFingerprintConsistency(config);
+  });
+
   // ===========================================================================
   // CANAIS DA INTERFACE PRINCIPAL (Validação: isMainSender)
   // ===========================================================================
@@ -6050,13 +6792,15 @@ function init(context) {
 
   ipcMain.handle('downloads:open-file', (event, filePath) => {
     if (!isDownloadsSender(event)) return false;
-    downloads.openFile(filePath);
+    if (typeof filePath !== 'string' || !filePath.trim()) return false;
+    downloads.openFile(filePath.trim());
     return true;
   });
 
   ipcMain.handle('downloads:show-in-folder', (event, filePath) => {
     if (!isDownloadsSender(event)) return false;
-    downloads.showInFolder(filePath);
+    if (typeof filePath !== 'string' || !filePath.trim()) return false;
+    downloads.showInFolder(filePath.trim());
     return true;
   });
 
@@ -6123,6 +6867,17 @@ function init(context) {
     return false;
   });
 
+  // Confirmação ou cancelamento de download potencialmente perigoso (ETAPA 4)
+  ipcMain.handle('downloads:confirm-risk', (event, downloadId) => {
+    if (!isMainSender(event, mainWindow)) return false;
+    return downloads.confirmRiskDownload(downloadId);
+  });
+
+  ipcMain.handle('downloads:cancel-risk', (event, downloadId) => {
+    if (!isMainSender(event, mainWindow)) return false;
+    return downloads.cancelRiskDownload(downloadId);
+  });
+
   // Notifica downloads na interface principal e nas abas de download abertas
   downloads.setDownloadUpdateListener((downloadData) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -6137,6 +6892,22 @@ function init(context) {
       }
     }
   });
+
+  // Notifica aviso de download de risco para a interface principal
+  downloads.setDownloadRiskListener((promptData) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('browser:download-risk-prompt', promptData);
+    }
+  });
+
+  // Canal para injeção de script de mitigação de fingerprinting nas abas web (ETAPA 5)
+  ipcMain.on('fingerprint:get-script', (event) => {
+    if (!event || !event.sender || event.sender.isDestroyed()) {
+      event.returnValue = '';
+      return;
+    }
+    event.returnValue = fingerprintProtection.getInjectionScript();
+  });
 }
 
 module.exports = {
@@ -6146,7 +6917,7 @@ module.exports = {
 
 ---
 
-### 3.19 `src/main/menu.js`
+### 4.21 `src/main/menu.js`
 
 ```javascript
 // =============================================================================
@@ -6587,13 +7358,33 @@ module.exports = {
 
 ---
 
-### 3.20 `src/main/pure/navigation-utils.js`
+### 4.22 `src/main/pure/navigation-utils.js`
 
 ```javascript
 // =============================================================================
 // src/main/pure/navigation-utils.js
 // Funções puras de normalização e validação de URLs sem dependência do Electron
 // =============================================================================
+
+/**
+ * Aplica um termo de pesquisa ao template de URL do buscador com segurança.
+ * Trata casos em que o template contenha %s, %25s ou seja uma URL base.
+ * @param {string} template Template do buscador (ex: https://duckduckgo.com/?q=%s)
+ * @param {string} query Termo pesquisado
+ * @returns {string} URL completa de busca
+ */
+function applySearchTemplate(template, query) {
+  const encoded = encodeURIComponent(query);
+  const t = (typeof template === 'string' && template.trim()) ? template.trim() : 'https://duckduckgo.com/?q=%s';
+
+  if (t.includes('%s')) {
+    return t.replace('%s', encoded);
+  }
+  if (t.includes('%25s')) {
+    return t.replace('%25s', encoded);
+  }
+  return `${t}${t.includes('?') ? '&q=' : '?q='}${encoded}`;
+}
 
 /**
  * Normaliza o texto digitado pelo usuário na barra de endereços
@@ -6641,7 +7432,7 @@ function normalizeInput(rawInput, options = {}) {
       new URL(text);
       return text;
     } catch {
-      return searchTemplate.replace('%s', encodeURIComponent(text));
+      return applySearchTemplate(searchTemplate, text);
     }
   }
 
@@ -6658,7 +7449,7 @@ function normalizeInput(rawInput, options = {}) {
 
   // 5. Se contiver espaços no meio, é busca
   if (/\s/.test(text)) {
-    return searchTemplate.replace('%s', encodeURIComponent(text));
+    return applySearchTemplate(searchTemplate, text);
   }
 
   // 6. Verificação de padrão de domínio de internet (ex: site.com, blog.org.br/artigo)
@@ -6669,22 +7460,23 @@ function normalizeInput(rawInput, options = {}) {
       new URL(candidate);
       return candidate;
     } catch {
-      return searchTemplate.replace('%s', encodeURIComponent(text));
+      return applySearchTemplate(searchTemplate, text);
     }
   }
 
   // 7. Qualquer termo sem ponto (ex: "tempo", "noticias") -> busca
-  return searchTemplate.replace('%s', encodeURIComponent(text));
+  return applySearchTemplate(searchTemplate, text);
 }
 
 module.exports = {
+  applySearchTemplate,
   normalizeInput
 };
 ```
 
 ---
 
-### 3.21 `src/main/pure/privacy-utils.js`
+### 4.23 `src/main/pure/privacy-utils.js`
 
 ```javascript
 // =============================================================================
@@ -6822,19 +7614,136 @@ function isValidBlocklistHost(line) {
   return hostRegex.test(clean);
 }
 
+/**
+ * Detecta se uma sequência de redirecionamentos em curto intervalo de tempo (<= windowMs)
+ * excede o limite de domínios diferentes visitados sem interação do usuário.
+ * Exemplo: mais de 2 transições para domínios diferentes em menos de 1.5 segundos.
+ *
+ * @param {Array<{ url: string, domain: string, timestamp: number }>} history
+ * @param {string} targetUrl URL de destino do redirecionamento
+ * @param {number} [now=Date.now()] Timestamp atual
+ * @param {number} [windowMs=1500] Janela de tempo em milissegundos
+ * @param {number} [threshold=2] Quantidade máxima tolerada de domínios diferentes na cadeia
+ * @returns {boolean} true se a cadeia for abusiva/suspeita
+ */
+function isSuspiciousRedirectChain(history, targetUrl, now = Date.now(), windowMs = 1500, threshold = 2) {
+  if (!Array.isArray(history) || !targetUrl) return false;
+  let targetDomain = '';
+  try {
+    targetDomain = getBaseDomain(new URL(targetUrl).hostname);
+  } catch {
+    return false;
+  }
+  if (!targetDomain) return false;
+
+  // Filtra itens recentes dentro da janela de tempo (ex.: 1500ms)
+  const recent = history.filter(item => (now - item.timestamp) <= windowMs);
+  const distinctDomains = new Set();
+  for (const item of recent) {
+    if (item.domain) {
+      distinctDomains.add(item.domain);
+    }
+  }
+
+  // Se já houver >= threshold domínios distintos e o novo for mais um domínio diferente
+  if (!distinctDomains.has(targetDomain) && distinctDomains.size >= threshold) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Calcula a nota de privacidade (A a F) para um site com base nas métricas coletadas pelo Dragon.
+ *
+ * Regra de avaliação (base 100 pontos):
+ * 1. Protocolo HTTPS:
+ *    - Conexão HTTPS: 0 penalidade (tráfego criptografado e seguro)
+ *    - Conexão HTTP insegura: -45 pontos (tráfego em texto claro, vulnerável a interceptação)
+ * 2. Rastreadores bloqueados:
+ *    - 0 rastreadores: 0 penalidade
+ *    - 1 a 3 rastreadores: -10 pontos
+ *    - 4 a 9 rastreadores: -25 pontos
+ *    - 10 ou mais rastreadores: -40 pontos
+ * 3. Pop-ups e Redirecionamentos abusivos bloqueados:
+ *    - 0 bloqueios: 0 penalidade
+ *    - 1 bloqueio: -15 pontos
+ *    - 2 ou mais bloqueios: -30 pontos
+ * 4. Cookies de terceiros bloqueados:
+ *    - Se houver registro de cookies de terceiros bloqueados: -5 pontos adicionais
+ *
+ * Classificação final:
+ * - A: 90 a 100 pontos (HTTPS + 0 a 3 rastreadores + sem popups)
+ * - B: 75 a 89 pontos (HTTPS + poucos rastreadores bloqueados)
+ * - C: 60 a 74 pontos (HTTPS + quantidade moderada de rastreadores ou 1 popup abusivo)
+ * - D: 40 a 59 pontos (HTTP inseguro OU densidade alta de rastreadores)
+ * - F: Menos de 40 pontos (HTTP inseguro com rastreadores/pop-ups OU tráfego altamente invasivo)
+ *
+ * @param {object} [info]
+ * @param {boolean} [info.isHttps=true]
+ * @param {number} [info.count=0]
+ * @param {number} [info.trackersCount=0]
+ * @param {number} [info.popupsBlocked=0]
+ * @param {number|boolean} [info.thirdPartyCookiesBlocked=0]
+ * @returns {'A'|'B'|'C'|'D'|'F'}
+ */
+function calculatePrivacyGrade(info = {}) {
+  const isHttps = info.isHttps !== false;
+  const trackers = Number(info.trackersCount ?? info.count ?? 0) || 0;
+  const popups = Number(info.popupsBlocked ?? 0) || 0;
+  const thirdPartyCookies = Number(info.thirdPartyCookiesBlocked ?? 0) || (info.thirdPartyCookiesBlocked ? 1 : 0);
+
+  let score = 100;
+
+  // 1. Penalidade por tráfego HTTP sem TLS/HTTPS
+  if (!isHttps) {
+    score -= 45;
+  }
+
+  // 2. Penalidade por rastreadores identificados e bloqueados
+  if (trackers >= 10) {
+    score -= 40;
+  } else if (trackers >= 4) {
+    score -= 25;
+  } else if (trackers >= 1) {
+    score -= 10;
+  }
+
+  // 3. Penalidade por pop-ups e redirecionamentos abusivos sem gesto do usuário
+  if (popups >= 2) {
+    score -= 30;
+  } else if (popups === 1) {
+    score -= 15;
+  }
+
+  // 4. Penalidade por cookies de terceiros
+  if (thirdPartyCookies > 0) {
+    score -= 5;
+  }
+
+  if (score >= 90) return 'A';
+  if (score >= 75) return 'B';
+  if (score >= 60) return 'C';
+  if (score >= 40) return 'D';
+  return 'F';
+}
+
 module.exports = {
   getBaseDomain,
   isLocalHost,
   isTrackerDomain,
   cleanTrackingParameters,
-  isValidBlocklistHost
+  isValidBlocklistHost,
+  isSuspiciousRedirectChain,
+  calculatePrivacyGrade
 };
+
 
 ```
 
 ---
 
-### 3.22 `src/main/pure/settings-utils.js`
+### 4.24 `src/main/pure/settings-utils.js`
 
 ```javascript
 // =============================================================================
@@ -6865,7 +7774,43 @@ const DEFAULT_SETTINGS = {
   proxyBypass: '<local>;*.local',
   proxyAuthUser: '',
   proxyAuthPasswordEncrypted: '',
-  applyProxyToPrivateTabs: false
+  applyProxyToPrivateTabs: false,
+
+  // Seção Encerramento e Privacidade
+  clearDataOnExit: false,
+
+  // Seção Proteção contra Fingerprinting Avançada (Configurável + Reset)
+  fingerprintProtectionEnabled: false,
+  fingerprintSpoofTimezone: false,
+  fingerprintSpoofResolution: false,
+  fingerprintCanvasNoise: false,
+  fingerprintLimitFonts: false,
+  fingerprintNormalizeUA: false,
+
+  fpFingerprintSeed: null,
+  fpOs: 'windows11',
+  fpBrowser: 'chrome',
+  fpUserAgent: 'auto',
+  fpPlatform: 'auto',
+  fpLocale: 'pt-BR',
+  fpTimezone: 'America/Sao_Paulo',
+  fpScreenResolution: '1920x1080',
+  fpDevicePixelRatio: 'auto',
+  fpHardwareConcurrency: 8,
+  fpDeviceMemory: 8,
+  fpTouchSupport: false,
+  fpWebglVendor: 'auto',
+  fpWebglRenderer: 'auto',
+  fpWebglImageMode: 'noise',
+  fpCanvasMode: 'noise',
+  fpAudioMode: 'noise',
+  fpClientRectsMode: 'noise',
+  fpFontsMode: 'mask',
+  fpWebrtcMode: 'proxy',
+  fpMediaDevicesCount: 2,
+  fpSpeechVoices: 'mask',
+  fpBatteryMode: 'mask',
+  fpPermissionsMode: 'mask'
 };
 
 const VALID_THEMES = new Set(['dark', 'light', 'system']);
@@ -6874,6 +7819,18 @@ const VALID_STARTUP_BEHAVIORS = new Set(['newtab', 'restore', 'custom']);
 const VALID_PROXY_MODES = new Set(['system', 'direct', 'manual']);
 const ACCENT_COLOR_REGEX = /^#[0-9a-fA-F]{6}$/;
 const BACKGROUND_IMAGE_REGEX = /^newtab-bg\.(png|jpe?g|webp|gif|bmp)$/i;
+
+const VALID_FP_OS = new Set(['windows10', 'windows11', 'macos', 'linux']);
+const VALID_FP_BROWSERS = new Set(['chrome', 'edge', 'firefox']);
+const VALID_FP_PLATFORMS = new Set(['auto', 'Win32', 'MacIntel', 'Linux x86_64']);
+const VALID_FP_LOCALES = new Set(['pt-BR', 'en-US', 'es-ES', 'fr-FR', 'de-DE']);
+const VALID_FP_RESOLUTIONS = new Set(['1920x1080', '2560x1440', '1366x768', '1536x864', '2880x1800', '3840x2160']);
+const VALID_FP_CORES = new Set([2, 4, 6, 8, 12, 16]);
+const VALID_FP_MEMORY = new Set([2, 4, 8, 16, 32]);
+const VALID_MODES_3 = new Set(['real', 'noise', 'mask']);
+const VALID_MODES_2 = new Set(['real', 'mask']);
+const VALID_WEBRTC_MODES = new Set(['proxy', 'disabled', 'real']);
+const VALID_MEDIA_COUNTS = new Set([0, 1, 2, 3]);
 
 function isValidHttpUrl(str) {
   if (typeof str !== 'string' || !str.trim()) return false;
@@ -6923,12 +7880,13 @@ function isValidSetting(key, value) {
       return isValidHttpUrl(value);
 
     case 'customSearchUrl':
-      return typeof value === 'string' && value.includes('%s') && isValidHttpUrl(value);
+      return typeof value === 'string' && (value === '' || (value.includes('%s') && isValidHttpUrl(value)));
 
     case 'backgroundImage':
       return typeof value === 'string' && (value === '' || BACKGROUND_IMAGE_REGEX.test(value));
 
     case 'showShortcuts':
+    case 'clearDataOnExit':
       return typeof value === 'boolean';
 
     case 'proxyMode':
@@ -6941,7 +7899,69 @@ function isValidSetting(key, value) {
       return typeof value === 'string';
 
     case 'applyProxyToPrivateTabs':
+    case 'fingerprintProtectionEnabled':
+    case 'fingerprintSpoofTimezone':
+    case 'fingerprintSpoofResolution':
+    case 'fingerprintCanvasNoise':
+    case 'fingerprintLimitFonts':
+    case 'fingerprintNormalizeUA':
+    case 'fpTouchSupport':
       return typeof value === 'boolean';
+
+    case 'fpFingerprintSeed':
+      return value === null || (typeof value === 'number' && !Number.isNaN(value) && Number.isInteger(value) && value >= 0);
+
+    case 'fpOs':
+      return typeof value === 'string' && VALID_FP_OS.has(value);
+
+    case 'fpBrowser':
+      return typeof value === 'string' && VALID_FP_BROWSERS.has(value);
+
+    case 'fpUserAgent':
+      return typeof value === 'string' && (value === 'auto' || value.length > 5);
+
+    case 'fpPlatform':
+      return typeof value === 'string' && VALID_FP_PLATFORMS.has(value);
+
+    case 'fpLocale':
+      return typeof value === 'string' && VALID_FP_LOCALES.has(value);
+
+    case 'fpTimezone':
+      return typeof value === 'string' && (value === 'auto' || value.length >= 2);
+
+    case 'fpScreenResolution':
+      return typeof value === 'string' && VALID_FP_RESOLUTIONS.has(value);
+
+    case 'fpDevicePixelRatio':
+      return value === 'auto' || ([1, 1.25, 1.5, 2, 3].includes(Number(value)));
+
+    case 'fpHardwareConcurrency':
+      return VALID_FP_CORES.has(Number(value));
+
+    case 'fpDeviceMemory':
+      return VALID_FP_MEMORY.has(Number(value));
+
+    case 'fpWebglVendor':
+    case 'fpWebglRenderer':
+      return typeof value === 'string' && value.length >= 1;
+
+    case 'fpWebglImageMode':
+    case 'fpCanvasMode':
+    case 'fpAudioMode':
+    case 'fpClientRectsMode':
+      return typeof value === 'string' && VALID_MODES_3.has(value);
+
+    case 'fpFontsMode':
+    case 'fpSpeechVoices':
+    case 'fpBatteryMode':
+    case 'fpPermissionsMode':
+      return typeof value === 'string' && VALID_MODES_2.has(value);
+
+    case 'fpWebrtcMode':
+      return typeof value === 'string' && VALID_WEBRTC_MODES.has(value);
+
+    case 'fpMediaDevicesCount':
+      return VALID_MEDIA_COUNTS.has(Number(value));
 
     default:
       return false;
@@ -6977,7 +7997,683 @@ module.exports = {
 
 ---
 
-### 3.23 `src/preload/preload.js`
+### 4.25 `src/main/pure/download-utils.js`
+
+```javascript
+// =============================================================================
+// src/main/pure/download-utils.js
+// Funções puras para validação e classificação de segurança de arquivos baixados
+// =============================================================================
+
+const path = require('path');
+
+// Lista canônica de extensões de risco de execução no Windows
+const RISKY_EXTENSIONS = new Set([
+  '.exe',
+  '.bat',
+  '.cmd',
+  '.scr',
+  '.msi',
+  '.vbs',
+  '.vbe',
+  '.js',
+  '.jse',
+  '.wsf',
+  '.wsh',
+  '.ps1',
+  '.ps1xml',
+  '.ps2',
+  '.ps2xml',
+  '.psc1',
+  '.psc2',
+  '.jar',
+  '.com',
+  '.pif',
+  '.reg',
+  '.hta',
+  '.cpl',
+  '.inf',
+  '.ins',
+  '.isp'
+]);
+
+/**
+ * Verifica se um nome de arquivo ou caminho possui extensão de risco de execução
+ * @param {string} filename Nome do arquivo ou caminho completo
+ * @returns {boolean}
+ */
+function isRiskyDownload(filename) {
+  if (!filename || typeof filename !== 'string') return false;
+  const ext = path.extname(filename).trim().toLowerCase();
+  return RISKY_EXTENSIONS.has(ext);
+}
+
+module.exports = {
+  RISKY_EXTENSIONS,
+  isRiskyDownload
+};
+```
+
+---
+
+### 4.26 `src/main/pure/fingerprint-utils.js`
+
+```javascript
+// =============================================================================
+// src/main/pure/fingerprint-utils.js
+// Funções puras para sistema de fingerprint avançado, presets e validação de consistência
+// =============================================================================
+
+const OS_PRESETS = {
+  windows11: {
+    id: 'windows11',
+    name: 'Windows 11',
+    platform: 'Win32',
+    uaOs: 'Windows NT 10.0; Win64; x64',
+    oscpu: 'Windows NT 10.0; Win64; x64',
+    defaultFonts: ['Arial', 'Calibri', 'Segoe UI', 'Tahoma', 'Times New Roman', 'Verdana', 'Consolas', 'Courier New', 'Georgia']
+  },
+  windows10: {
+    id: 'windows10',
+    name: 'Windows 10',
+    platform: 'Win32',
+    uaOs: 'Windows NT 10.0; Win64; x64',
+    oscpu: 'Windows NT 10.0; Win64; x64',
+    defaultFonts: ['Arial', 'Calibri', 'Segoe UI', 'Tahoma', 'Times New Roman', 'Verdana', 'Consolas', 'Courier New', 'Georgia']
+  },
+  macos: {
+    id: 'macos',
+    name: 'macOS (Sonoma / Sequoia)',
+    platform: 'MacIntel',
+    uaOs: 'Macintosh; Intel Mac OS X 10_15_7',
+    oscpu: 'Intel Mac OS X 10_15_7',
+    defaultFonts: ['San Francisco', 'Helvetica Neue', 'Helvetica', 'Arial', 'Times', 'Courier', 'Geneva', 'Monaco', 'Menlo']
+  },
+  linux: {
+    id: 'linux',
+    name: 'Linux (Ubuntu / Fedora)',
+    platform: 'Linux x86_64',
+    uaOs: 'X11; Linux x86_64',
+    oscpu: 'Linux x86_64',
+    defaultFonts: ['DejaVu Sans', 'Liberation Sans', 'Ubuntu', 'FreeSans', 'Arial', 'Times New Roman', 'Courier 10 Pitch', 'DejaVu Sans Mono']
+  }
+};
+
+const BROWSER_PRESETS = {
+  chrome: {
+    id: 'chrome',
+    name: 'Google Chrome',
+    version: '130.0.0.0',
+    vendor: 'Google Inc.'
+  },
+  edge: {
+    id: 'edge',
+    name: 'Microsoft Edge',
+    version: '130.0.0.0',
+    vendor: 'Google Inc.'
+  },
+  firefox: {
+    id: 'firefox',
+    name: 'Mozilla Firefox',
+    version: '132.0',
+    vendor: ''
+  }
+};
+
+const GPU_PRESETS = {
+  windows: [
+    {
+      vendor: 'Google Inc. (NVIDIA)',
+      renderer: 'ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)'
+    },
+    {
+      vendor: 'Google Inc. (NVIDIA)',
+      renderer: 'ANGLE (NVIDIA, NVIDIA GeForce GTX 1650 Direct3D11 vs_5_0 ps_5_0, D3D11)'
+    },
+    {
+      vendor: 'Google Inc. (NVIDIA)',
+      renderer: 'ANGLE (NVIDIA, NVIDIA GeForce RTX 4070 Direct3D11 vs_5_0 ps_5_0, D3D11)'
+    },
+    {
+      vendor: 'Google Inc. (AMD)',
+      renderer: 'ANGLE (AMD, AMD Radeon RX 6600 Direct3D11 vs_5_0 ps_5_0, D3D11)'
+    },
+    {
+      vendor: 'Google Inc. (Intel)',
+      renderer: 'ANGLE (Intel, Intel(R) UHD Graphics 620 Direct3D11 vs_5_0 ps_5_0, D3D11)'
+    },
+    {
+      vendor: 'Google Inc. (Intel)',
+      renderer: 'ANGLE (Intel, Intel(R) Iris(R) Xe Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)'
+    }
+  ],
+  macos: [
+    {
+      vendor: 'Google Inc. (Apple)',
+      renderer: 'ANGLE (Apple, Apple M1, OpenGL 4.1)'
+    },
+    {
+      vendor: 'Google Inc. (Apple)',
+      renderer: 'ANGLE (Apple, Apple M2, OpenGL 4.1)'
+    },
+    {
+      vendor: 'Google Inc. (Apple)',
+      renderer: 'ANGLE (Apple, Apple M3, OpenGL 4.1)'
+    },
+    {
+      vendor: 'Google Inc. (Intel Inc.)',
+      renderer: 'ANGLE (Intel Inc., Intel Iris Plus Graphics OpenGL 4.1)'
+    }
+  ],
+  linux: [
+    {
+      vendor: 'Google Inc. (Intel)',
+      renderer: 'Mesa Intel(R) UHD Graphics 620 (KBL GT2)'
+    },
+    {
+      vendor: 'Google Inc. (Mesa)',
+      renderer: 'Mesa AMD Radeon RX 580 (POLARIS10)'
+    },
+    {
+      vendor: 'Google Inc. (NVIDIA Corporation)',
+      renderer: 'NVIDIA GeForce GTX 1060 6GB/PCIe/SSE2'
+    }
+  ]
+};
+
+const SCREEN_PRESETS = [
+  { id: '1920x1080', name: '1920 × 1080 (Full HD, Mais Comum)', width: 1920, height: 1080, dpr: 1 },
+  { id: '2560x1440', name: '2560 × 1440 (2K / QHD)', width: 2560, height: 1440, dpr: 1.25 },
+  { id: '1366x768',  name: '1366 × 768 (Notebook Padrão)', width: 1366, height: 768, dpr: 1 },
+  { id: '1536x864',  name: '1536 × 864 (Notebook Alta Densidade)', width: 1536, height: 864, dpr: 1.25 },
+  { id: '2880x1800', name: '2880 × 1800 (MacBook Pro Retina)', width: 2880, height: 1800, dpr: 2 },
+  { id: '3840x2160', name: '3840 × 2160 (4K UHD)', width: 3840, height: 2160, dpr: 1.5 }
+];
+
+const LOCALE_TIMEZONE_MAP = {
+  'pt-BR': ['America/Sao_Paulo', 'America/Fortaleza', 'America/Cuiaba', 'America/Manaus'],
+  'en-US': ['America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles'],
+  'es-ES': ['Europe/Madrid', 'Atlantic/Canary'],
+  'fr-FR': ['Europe/Paris'],
+  'de-DE': ['Europe/Berlin']
+};
+
+const TIMEZONE_PRESETS = [
+  'America/Sao_Paulo',
+  'America/New_York',
+  'America/Chicago',
+  'America/Los_Angeles',
+  'Europe/London',
+  'Europe/Paris',
+  'Europe/Berlin',
+  'Europe/Madrid',
+  'Asia/Tokyo',
+  'UTC'
+];
+
+/**
+ * Deriva uma string realista de User-Agent a partir do sistema operacional e navegador.
+ * @param {string} os
+ * @param {string} browser
+ * @param {string} [version]
+ * @returns {string}
+ */
+function deriveUserAgent(os, browser, version) {
+  const osData = OS_PRESETS[os] || OS_PRESETS.windows11;
+  const bData = BROWSER_PRESETS[browser] || BROWSER_PRESETS.chrome;
+  const ver = version || bData.version;
+
+  if (bData.id === 'firefox') {
+    return `Mozilla/5.0 (${osData.uaOs}; rv:${ver}) Gecko/20100101 Firefox/${ver}`;
+  }
+
+  if (bData.id === 'edge') {
+    return `Mozilla/5.0 (${osData.uaOs}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${ver} Safari/537.36 Edg/${ver}`;
+  }
+
+  return `Mozilla/5.0 (${osData.uaOs}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${ver} Safari/537.36`;
+}
+
+/**
+ * Deriva navigator.platform a partir do sistema operacional
+ * @param {string} os
+ * @returns {string}
+ */
+function derivePlatform(os) {
+  const osData = OS_PRESETS[os];
+  return osData ? osData.platform : 'Win32';
+}
+
+/**
+ * Deriva DevicePixelRatio padrão baseado na resolução
+ * @param {string} resolution
+ * @returns {number}
+ */
+function deriveDevicePixelRatio(resolution) {
+  const preset = SCREEN_PRESETS.find(p => p.id === resolution);
+  return preset ? preset.dpr : 1;
+}
+
+/**
+ * Deriva GPU compatível para o SO e vendor
+ * @param {string} os
+ * @param {string} [vendor]
+ * @returns {{ vendor: string, renderer: string }}
+ */
+function deriveWebglRenderer(os, vendor) {
+  const osKey = (os === 'macos') ? 'macos' : (os === 'linux' ? 'linux' : 'windows');
+  const list = GPU_PRESETS[osKey] || GPU_PRESETS.windows;
+
+  if (vendor && vendor !== 'auto') {
+    const matched = list.find(g => g.vendor.toLowerCase().includes(vendor.toLowerCase()));
+    if (matched) return matched;
+  }
+
+  return list[0];
+}
+
+/**
+ * Valida consistência interna das configurações de fingerprint.
+ * Detecta combinações impossíveis (ex.: macOS com NVIDIA) e combinações improváveis.
+ *
+ * @param {object} config
+ * @returns {{ valid: boolean, errors: string[], warnings: string[] }}
+ */
+function validateFingerprintConsistency(config) {
+  const errors = [];
+  const warnings = [];
+  if (!config || typeof config !== 'object') {
+    return { valid: true, errors, warnings };
+  }
+
+  const os = config.fpOs || 'windows11';
+  const browser = config.fpBrowser || 'chrome';
+  const platform = config.fpPlatform;
+  const ua = config.fpUserAgent;
+  const resolution = config.fpScreenResolution || '1920x1080';
+  const dpr = config.fpDevicePixelRatio;
+  const cores = Number(config.fpHardwareConcurrency) || 8;
+  const memory = Number(config.fpDeviceMemory) || 8;
+  const vendor = config.fpWebglVendor || 'auto';
+  const renderer = config.fpWebglRenderer || 'auto';
+  const locale = config.fpLocale;
+  const timezone = config.fpTimezone;
+
+  // 1. Regra Inegociável: macOS NUNCA usa NVIDIA
+  if (os === 'macos') {
+    if (vendor !== 'auto' && /nvidia/i.test(vendor)) {
+      errors.push('macOS não oferece suporte nem utiliza GPUs NVIDIA modernas.');
+    }
+    if (renderer !== 'auto' && /nvidia/i.test(renderer)) {
+      errors.push('macOS não utiliza renderizadores de vídeo NVIDIA.');
+    }
+  }
+
+  // 2. Regra de Plataforma
+  if (platform && platform !== 'auto') {
+    if (os === 'macos' && platform !== 'MacIntel') {
+      warnings.push(`Sistema selecionado é macOS, mas a plataforma configurada é ${platform} (esperado: MacIntel).`);
+    } else if ((os === 'windows10' || os === 'windows11') && platform !== 'Win32') {
+      warnings.push(`Sistema selecionado é Windows, mas a plataforma configurada é ${platform} (esperado: Win32).`);
+    } else if (os === 'linux' && platform !== 'Linux x86_64') {
+      warnings.push(`Sistema selecionado é Linux, mas a plataforma configurada é ${platform} (esperado: Linux x86_64).`);
+    }
+  }
+
+  // 3. Regra de User-Agent
+  if (ua && ua !== 'auto') {
+    if (browser === 'firefox' && !/firefox\//i.test(ua)) {
+      warnings.push('Navegador selecionado é Firefox, mas o User-Agent não contém a assinatura Firefox/.');
+    }
+    if (os === 'macos' && !/macintosh/i.test(ua)) {
+      warnings.push('Sistema selecionado é macOS, mas o User-Agent não menciona Macintosh.');
+    }
+    if ((os === 'windows10' || os === 'windows11') && !/windows nt/i.test(ua)) {
+      warnings.push('Sistema selecionado é Windows, mas o User-Agent não menciona Windows NT.');
+    }
+  }
+
+  // 4. Regra de Resolução e DPR
+  if (resolution === '2880x1800' && os !== 'macos') {
+    warnings.push('Resolução 2880×1800 é nativa de monitores Retina de MacBook Pro (incomum em Windows/Linux).');
+  }
+  if (resolution === '1366x768' && Number(dpr) > 1.25) {
+    warnings.push('Resolução 1366×768 com DevicePixelRatio alto (> 1.25) é incomum em hardware real.');
+  }
+
+  // 5. Hardware Concurrency e RAM
+  if (memory >= 32 && cores <= 2) {
+    warnings.push('Computadores com 32GB de RAM geralmente possuem 4 ou mais núcleos de CPU.');
+  }
+
+  // 6. Timezone e Locale
+  if (locale && timezone && timezone !== 'auto' && timezone !== 'UTC') {
+    const expectedTzList = LOCALE_TIMEZONE_MAP[locale];
+    if (expectedTzList && !expectedTzList.includes(timezone)) {
+      warnings.push(`O idioma ${locale} tipicamente utiliza fusos horários como ${expectedTzList[0]}, mas o fuso ativo é ${timezone}.`);
+    }
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+    warnings
+  };
+}
+
+/**
+ * Gera um inteiro determinístico de 32 bits a partir do seed persistente e configurações.
+ * @param {object} config
+ * @returns {number}
+ */
+function buildFingerprintSeed(config) {
+  if (!config || typeof config !== 'object') {
+    return 123456789;
+  }
+
+  let baseSeed = Number(config.fpFingerprintSeed);
+  if (!baseSeed || Number.isNaN(baseSeed)) {
+    baseSeed = 123456789;
+  }
+
+  // Gera hash simples e rápido tipo FNV-1a com as chaves de identidade
+  const str = `${config.fpOs || ''}|${config.fpBrowser || ''}|${config.fpScreenResolution || ''}|${config.fpTimezone || ''}|${config.fpHardwareConcurrency || ''}|${config.fpDeviceMemory || ''}`;
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) {
+    hash ^= str.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+
+  return (baseSeed ^ hash) >>> 0;
+}
+
+/**
+ * Aplica ruído sutil e determinístico em dados brutos de pixels RGBA.
+ * Mantida para retrocompatibilidade com a suíte de testes existente.
+ *
+ * @param {Uint8ClampedArray|number[]} data
+ * @param {number} seed
+ * @returns {Uint8ClampedArray|number[]}
+ */
+function applyDeterministicCanvasNoise(data, seed) {
+  if (!data || typeof data.length !== 'number' || data.length === 0) return data;
+  const numSeed = Number(seed) || 12345;
+
+  for (let i = 0; i < data.length; i += 16) {
+    if (data[i + 3] === 0) continue;
+    const hash = (Math.imul(i ^ numSeed, 0x45d9f3b) >>> 0) % 3;
+    const delta = (hash === 0) ? -1 : (hash === 1 ? 1 : 0);
+    if (delta !== 0) {
+      const channelIndex = i + (hash % 3);
+      const val = data[channelIndex];
+      data[channelIndex] = Math.max(0, Math.min(255, val + delta));
+    }
+  }
+
+  return data;
+}
+
+/**
+ * Alias semântico para applyDeterministicCanvasNoise
+ */
+function applyCanvasNoise(data, seed) {
+  return applyDeterministicCanvasNoise(data, seed);
+}
+
+/**
+ * Aplica ruído imperceptível e determinístico em amostras de buffer de áudio (Float32Array).
+ * Variação na faixa de +/- 0.00002 mantendo o sinal audível limpo.
+ *
+ * @param {Float32Array|number[]} buffer
+ * @param {number} seed
+ * @returns {Float32Array|number[]}
+ */
+function applyAudioNoise(buffer, seed) {
+  if (!buffer || typeof buffer.length !== 'number' || buffer.length === 0) return buffer;
+  const numSeed = Number(seed) || 54321;
+
+  for (let i = 0; i < buffer.length; i += 32) {
+    const hash = (Math.imul(i ^ numSeed, 0x27d4eb2d) >>> 0) % 5;
+    // Variação minúscula entre -0.00004 e +0.00004
+    const delta = (hash - 2) * 0.00002;
+    buffer[i] = buffer[i] + delta;
+  }
+
+  return buffer;
+}
+
+/**
+ * Aplica ruído determinístico em DOMRect (x, y, width, height) para ClientRects
+ * @param {object} rect
+ * @param {number} seed
+ * @returns {object}
+ */
+function applyClientRectsNoise(rect, seed) {
+  if (!rect || typeof rect !== 'object') return rect;
+  const numSeed = Number(seed) || 98765;
+
+  const hashX = (Math.imul(numSeed, 0x1f1f1f) >>> 0) % 3;
+  const deltaX = (hashX === 0 ? -0.1 : (hashX === 1 ? 0.1 : 0));
+
+  const hashY = (Math.imul(numSeed ^ 0xabc, 0x3b3b3b) >>> 0) % 3;
+  const deltaY = (hashY === 0 ? -0.1 : (hashY === 1 ? 0.1 : 0));
+
+  return {
+    x: Number((rect.x + deltaX).toFixed(2)),
+    y: Number((rect.y + deltaY).toFixed(2)),
+    width: Number((rect.width + deltaX).toFixed(2)),
+    height: Number((rect.height + deltaY).toFixed(2)),
+    top: Number(((rect.top || rect.y) + deltaY).toFixed(2)),
+    bottom: Number(((rect.bottom || (rect.y + rect.height)) + deltaY).toFixed(2)),
+    left: Number(((rect.left || rect.x) + deltaX).toFixed(2)),
+    right: Number(((rect.right || (rect.x + rect.width)) + deltaX).toFixed(2))
+  };
+}
+
+/**
+ * Normaliza o User-Agent removendo versões exatas do Electron e Chromium
+ * Mantida para retrocompatibilidade com a suíte de testes existente.
+ * @param {string} ua User-Agent original
+ * @returns {string}
+ */
+function normalizeUserAgentString(ua) {
+  if (typeof ua !== 'string') return '';
+  return ua
+    .replace(/Electron\/[0-9.]+\s?/gi, '')
+    .replace(/Dragon\/[0-9.]+\s?/gi, '')
+    .replace(/Chrome\/[0-9.]+/i, 'Chrome/130.0.0.0')
+    .replace(/Chromium\/[0-9.]+/i, 'Chrome/130.0.0.0')
+    .trim();
+}
+
+/**
+ * Gerador pseudoaleatório linear congruencial (LCG) com semente para sorteios determinísticos
+ * @param {number} seed
+ * @returns {function(): number} Retorna float no intervalo [0, 1)
+ */
+function createPrng(seed) {
+  let s = (Number(seed) || 123456789) >>> 0;
+  return function() {
+    s = (Math.imul(1664525, s) + 1013904223) >>> 0;
+    return s / 4294967296;
+  };
+}
+
+/**
+ * Sorteia uma nova identidade de fingerprint aleatória e 100% consistente a partir de uma semente.
+ *
+ * @param {number} seed
+ * @returns {{ config: object, seed: number }}
+ */
+function pickRandomConsistentPresetWithSeed(seed) {
+  const prng = createPrng(seed);
+
+  // 1. Sorteio de SO ponderado: 70% Windows (50% Win11, 20% Win10), 20% macOS, 10% Linux
+  const osRoll = prng();
+  let os = 'windows11';
+  if (osRoll < 0.50) os = 'windows11';
+  else if (osRoll < 0.70) os = 'windows10';
+  else if (osRoll < 0.90) os = 'macos';
+  else os = 'linux';
+
+  // 2. Sorteio de Navegador: 75% Chrome, 20% Edge (se Windows) ou Chrome, 5% Firefox
+  const browserRoll = prng();
+  let browser = 'chrome';
+  if (browserRoll < 0.75) {
+    browser = 'chrome';
+  } else if (browserRoll < 0.95 && (os === 'windows11' || os === 'windows10')) {
+    browser = 'edge';
+  } else {
+    browser = 'firefox';
+  }
+
+  // 3. Resolução e DPR consistentes com o SO
+  let allowedResolutions = SCREEN_PRESETS.filter(p => p.id !== '2880x1800');
+  if (os === 'macos') {
+    allowedResolutions = SCREEN_PRESETS.filter(p => p.id === '2880x1800' || p.id === '2560x1440' || p.id === '1920x1080');
+  }
+  const resIdx = Math.floor(prng() * allowedResolutions.length);
+  const chosenRes = allowedResolutions[resIdx];
+  const resolution = chosenRes.id;
+  const dpr = chosenRes.dpr;
+
+  // 4. Hardware: núcleos e memória coerentes
+  const coreOptions = [4, 6, 8, 12, 16];
+  const cores = coreOptions[Math.floor(prng() * coreOptions.length)];
+  const memoryOptions = cores <= 4 ? [4, 8, 16] : [8, 16, 32];
+  const memory = memoryOptions[Math.floor(prng() * memoryOptions.length)];
+
+  // 5. GPU compatível com o SO (nunca NVIDIA em macOS)
+  const gpuList = GPU_PRESETS[os === 'macos' ? 'macos' : (os === 'linux' ? 'linux' : 'windows')];
+  const chosenGpu = gpuList[Math.floor(prng() * gpuList.length)];
+
+  // 6. Locale e Timezone coerentes
+  const localeKeys = Object.keys(LOCALE_TIMEZONE_MAP);
+  const chosenLocale = localeKeys[Math.floor(prng() * localeKeys.length)];
+  const tzList = LOCALE_TIMEZONE_MAP[chosenLocale];
+  const chosenTz = tzList[Math.floor(prng() * tzList.length)];
+
+  const config = {
+    fingerprintProtectionEnabled: true,
+    fpFingerprintSeed: seed,
+    fpOs: os,
+    fpBrowser: browser,
+    fpUserAgent: 'auto',
+    fpPlatform: 'auto',
+    fpLocale: chosenLocale,
+    fpTimezone: chosenTz,
+    fpScreenResolution: resolution,
+    fpDevicePixelRatio: dpr,
+    fpHardwareConcurrency: cores,
+    fpDeviceMemory: memory,
+    fpTouchSupport: false,
+    fpWebglVendor: chosenGpu.vendor,
+    fpWebglRenderer: chosenGpu.renderer,
+    fpWebglImageMode: 'noise',
+    fpCanvasMode: 'noise',
+    fpAudioMode: 'noise',
+    fpClientRectsMode: 'noise',
+    fpFontsMode: 'mask',
+    fpWebrtcMode: 'proxy',
+    fpMediaDevicesCount: 2,
+    fpSpeechVoices: 'mask',
+    fpBatteryMode: 'mask',
+    fpPermissionsMode: 'mask'
+  };
+
+  return { config, seed };
+}
+
+/**
+ * Sorteia uma nova identidade consistente gerando uma semente inteira de 32 bits.
+ * Se a validação falhar, tenta até 10 vezes; persistindo a falha, aplica um preset seguro.
+ * @returns {{ config: object, seed: number }}
+ */
+function pickRandomConsistentPreset() {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const seed = (Math.floor(Math.random() * 0x7FFFFFFF) + 1);
+    const candidate = pickRandomConsistentPresetWithSeed(seed);
+    const check = validateFingerprintConsistency(candidate.config);
+    if (check.valid && check.errors.length === 0) {
+      return candidate;
+    }
+  }
+
+  // Fallback seguro comprovadamente consistente
+  const fallbackSeed = 123456789;
+  return {
+    seed: fallbackSeed,
+    config: {
+      fingerprintProtectionEnabled: true,
+      fpFingerprintSeed: fallbackSeed,
+      fpOs: 'windows11',
+      fpBrowser: 'chrome',
+      fpUserAgent: 'auto',
+      fpPlatform: 'auto',
+      fpLocale: 'pt-BR',
+      fpTimezone: 'America/Sao_Paulo',
+      fpScreenResolution: '1920x1080',
+      fpDevicePixelRatio: 1,
+      fpHardwareConcurrency: 8,
+      fpDeviceMemory: 8,
+      fpTouchSupport: false,
+      fpWebglVendor: 'Google Inc. (Intel)',
+      fpWebglRenderer: 'ANGLE (Intel, Intel(R) UHD Graphics 620 Direct3D11 vs_5_0 ps_5_0, D3D11)',
+      fpWebglImageMode: 'noise',
+      fpCanvasMode: 'noise',
+      fpAudioMode: 'noise',
+      fpClientRectsMode: 'noise',
+      fpFontsMode: 'mask',
+      fpWebrtcMode: 'proxy',
+      fpMediaDevicesCount: 2,
+      fpSpeechVoices: 'mask',
+      fpBatteryMode: 'mask',
+      fpPermissionsMode: 'mask'
+    }
+  };
+}
+
+/**
+ * Retorna as listas de opções disponíveis para popular selects na interface
+ */
+function getFingerprintOptions() {
+  return {
+    osList: Object.values(OS_PRESETS),
+    browserList: Object.values(BROWSER_PRESETS),
+    screenList: SCREEN_PRESETS,
+    timezoneList: TIMEZONE_PRESETS,
+    localeList: Object.keys(LOCALE_TIMEZONE_MAP),
+    gpuPresets: GPU_PRESETS
+  };
+}
+
+module.exports = {
+  OS_PRESETS,
+  BROWSER_PRESETS,
+  GPU_PRESETS,
+  SCREEN_PRESETS,
+  TIMEZONE_PRESETS,
+  LOCALE_TIMEZONE_MAP,
+  deriveUserAgent,
+  derivePlatform,
+  deriveDevicePixelRatio,
+  deriveWebglRenderer,
+  validateFingerprintConsistency,
+  buildFingerprintSeed,
+  applyDeterministicCanvasNoise,
+  applyCanvasNoise,
+  applyAudioNoise,
+  applyClientRectsNoise,
+  normalizeUserAgentString,
+  pickRandomConsistentPreset,
+  pickRandomConsistentPresetWithSeed,
+  getFingerprintOptions
+};
+```
+
+---
+
+### 4.27 `src/preload/preload.js`
 
 ```javascript
 // =============================================================================
@@ -7006,6 +8702,7 @@ contextBridge.exposeInMainWorld('browserAPI', {
 
   // --- Comandos de Navegação ---
   navigate: (urlOrQuery) => ipcRenderer.invoke('navigation:navigate', urlOrQuery),
+  allowRedirect: (url) => ipcRenderer.invoke('navigation:allow-redirect', url),
   navigateHome: () => ipcRenderer.invoke('navigation:home'),
   goBack: () => ipcRenderer.invoke('navigation:back'),
   goForward: () => ipcRenderer.invoke('navigation:forward'),
@@ -7034,6 +8731,10 @@ contextBridge.exposeInMainWorld('browserAPI', {
   // --- Apagar Tudo (Fogo do Dragão Azul) ---
   clearAllData: (options) => ipcRenderer.invoke('app:clear-all-data', options),
   finishClearSession: () => ipcRenderer.invoke('app:finish-clear-session'),
+
+  // --- Downloads com Risco de Execução (ETAPA 4) ---
+  confirmRiskDownload: (downloadId) => ipcRenderer.invoke('downloads:confirm-risk', downloadId),
+  cancelRiskDownload: (downloadId) => ipcRenderer.invoke('downloads:cancel-risk', downloadId),
 
   // --- Obtenção de Estado Inicial e Configurações ---
   getState: () => ipcRenderer.invoke('app:get-state'),
@@ -7151,13 +8852,33 @@ contextBridge.exposeInMainWorld('browserAPI', {
     return () => {
       ipcRenderer.removeListener('browser:download-update', subscription);
     };
+  },
+
+  onRedirectBlocked: (callback) => {
+    if (typeof callback !== 'function') return () => {};
+    const subscription = (event, payload) => callback(payload);
+    ipcRenderer.on('browser:redirect-blocked', subscription);
+
+    return () => {
+      ipcRenderer.removeListener('browser:redirect-blocked', subscription);
+    };
+  },
+
+  onDownloadRiskPrompt: (callback) => {
+    if (typeof callback !== 'function') return () => {};
+    const subscription = (event, payload) => callback(payload);
+    ipcRenderer.on('browser:download-risk-prompt', subscription);
+
+    return () => {
+      ipcRenderer.removeListener('browser:download-risk-prompt', subscription);
+    };
   }
 });
 ```
 
 ---
 
-### 3.24 `src/preload/settings-preload.js`
+### 4.28 `src/preload/settings-preload.js`
 
 ```javascript
 // =============================================================================
@@ -7249,13 +8970,32 @@ contextBridge.exposeInMainWorld('settingsAPI', {
     return () => {
       ipcRenderer.removeListener('settings:changed', subscription);
     };
-  }
+  },
+
+  /**
+   * Reseta o fingerprint gerando uma nova identidade aleatória e consistente.
+   * @returns {Promise<object>}
+   */
+  resetFingerprint: () => ipcRenderer.invoke('fingerprint:reset'),
+
+  /**
+   * Obtém opções de presets para popular dropdowns de fingerprint.
+   * @returns {Promise<object>}
+   */
+  getFingerprintOptions: () => ipcRenderer.invoke('fingerprint:get-options'),
+
+  /**
+   * Valida a consistência interna das configurações de fingerprint.
+   * @param {object} config
+   * @returns {Promise<{ valid: boolean, errors: string[], warnings: string[] }>}
+   */
+  validateFingerprint: (config) => ipcRenderer.invoke('fingerprint:validate', config)
 });
 ```
 
 ---
 
-### 3.25 `src/preload/tab-preload.js`
+### 4.29 `src/preload/tab-preload.js`
 
 ```javascript
 // =============================================================================
@@ -7266,7 +9006,7 @@ contextBridge.exposeInMainWorld('settingsAPI', {
 // Expõe métodos restritos apenas quando a URL pertence às páginas internas autorizadas.
 // =============================================================================
 
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webFrame } = require('electron');
 
 const rawPathname = (window.location && window.location.pathname) || '';
 const pathname = decodeURIComponent(rawPathname).replace(/\\/g, '/').toLowerCase();
@@ -7276,6 +9016,25 @@ const isCertError = pathname.endsWith('/pages/cert-error.html');
 const isHistory = pathname.endsWith('/pages/history.html');
 const isBookmarks = pathname.endsWith('/pages/bookmarks.html');
 const isDownloads = pathname.endsWith('/pages/downloads.html');
+const isNewTab = pathname.endsWith('/pages/newtab.html');
+const isSettings = pathname.endsWith('/pages/settings.html');
+const isError = pathname.endsWith('/pages/error.html');
+
+const isInternalPage = isHttpsWarning || isCertError || isHistory || isBookmarks || isDownloads ||
+  isNewTab || isSettings || isError ||
+  (window.location && (window.location.protocol === 'chrome:' || window.location.protocol === 'data:'));
+
+// ETAPA 5: Injeta proteções de fingerprinting estritamente em páginas web normais (HTTP/HTTPS)
+if (!isInternalPage) {
+  try {
+    const fpScript = ipcRenderer.sendSync('fingerprint:get-script');
+    if (fpScript && typeof fpScript === 'string' && fpScript.trim()) {
+      webFrame.executeJavaScript(fpScript);
+    }
+  } catch (err) {
+    // Falha silenciosa para preservar a navegação
+  }
+}
 
 // Expõe a API de aviso HTTPS estritamente para pages/https-warning.html
 if (isHttpsWarning) {
@@ -7337,7 +9096,7 @@ if (isDownloads) {
 
 ---
 
-### 3.26 `src/renderer/index.html`
+### 4.30 `src/renderer/index.html`
 
 ```html
 <!DOCTYPE html>
@@ -7345,7 +9104,7 @@ if (isDownloads) {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: http:;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: http:;">
   <title>Dragon</title>
   <!-- Estilos carregados na ordem correta: Tema -> Base -> Componentes -->
   <link rel="stylesheet" href="styles/theme.css">
@@ -7476,6 +9235,20 @@ if (isDownloads) {
     </nav>
   </div>
 
+  <!-- Barra de Aviso Não-Intrusivo de Redirecionamento Bloqueado (ETAPA 1) -->
+  <div id="redirect-blocked-bar" class="redirect-blocked-bar" hidden>
+    <div class="redirect-bar-content">
+      <svg class="redirect-bar-icon" viewBox="0 0 16 16">
+        <path fill="currentColor" d="M8 0c-.26 0-.51.1-.7.29L2.24 5.35c-.15.15-.24.36-.24.58v4.57c0 3.2 2.37 5.09 5.76 5.48.16.02.32.02.48 0 3.39-.39 5.76-2.28 5.76-5.48V5.93c0-.22-.09-.43-.24-.58L8.7 0.29C8.51 0.1 8.26 0 8 0zm0 1.5l4.5 4.5v4.5c0 2.4-1.7 3.8-4.5 4.19-2.8-.39-4.5-1.79-4.5-4.19V6l4.5-4.5z"/>
+      </svg>
+      <span id="redirect-blocked-text" class="redirect-bar-text">Redirecionamento bloqueado — exemplo.com</span>
+    </div>
+    <div class="redirect-bar-actions">
+      <button id="btn-allow-redirect" class="btn-allow-redirect">Permitir mesmo assim</button>
+      <button id="btn-dismiss-redirect" class="btn-dismiss-redirect" title="Dispensar aviso" aria-label="Dispensar aviso">✕</button>
+    </div>
+  </div>
+
   <!-- Barra de Busca na Página (Ctrl+F) -->
   <div id="find-bar">
     <input type="text" id="find-input" class="find-input" placeholder="Buscar na página..." />
@@ -7512,6 +9285,27 @@ if (isDownloads) {
       <div class="perm-actions">
         <button type="button" id="btn-perm-block" class="btn-perm-block">Bloquear</button>
         <button type="button" id="btn-perm-allow" class="btn-perm-allow">Permitir</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de Aviso de Download de Risco (Bottom Sheet - ETAPA 4) -->
+  <div id="download-risk-overlay">
+    <div id="download-risk-panel" role="dialog" aria-modal="true" aria-labelledby="download-risk-title">
+      <div class="perm-header">
+        <div class="perm-icon risk-warning-icon">
+          <svg viewBox="0 0 16 16">
+            <path fill="currentColor" d="M8.982 1.566a1.13 1.13 0 0 0-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767L8.982 1.566zM8 5c.535 0 .954.462.9.995l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 5.995A.905.905 0 0 1 8 5zm.002 6a1 1 0 1 1 0 2 1 1 0 0 1 0-2z"/>
+          </svg>
+        </div>
+        <div>
+          <h2 id="download-risk-title" class="perm-title">Arquivo potencialmente perigoso</h2>
+          <p id="download-risk-desc" class="perm-desc">Este arquivo executável pode danificar seu computador ou executar ações indesejadas.</p>
+        </div>
+      </div>
+      <div class="perm-actions">
+        <button type="button" id="btn-download-risk-cancel" class="btn-risk-cancel">Cancelar download</button>
+        <button type="button" id="btn-download-risk-confirm" class="btn-risk-continue">Continuar mesmo assim</button>
       </div>
     </div>
   </div>
@@ -7566,7 +9360,11 @@ if (isDownloads) {
     </div>
     <div class="shield-panel-body">
       <div class="shield-section-header">
-        <span id="shield-trackers-count" class="shield-trackers-count">0 rastreadores bloqueados nesta página</span>
+        <div id="shield-grade-badge" class="shield-grade-badge grade-a" title="Classificação de privacidade do site">A</div>
+        <div class="shield-metrics-wrap">
+          <span id="shield-trackers-count" class="shield-trackers-count">0 rastreadores bloqueados nesta página</span>
+          <span id="shield-popups-count" class="shield-popups-count">0 pop-ups / redirecionamentos bloqueados</span>
+        </div>
       </div>
       <ul id="shield-trackers-list" class="shield-trackers-list">
         <li class="shield-empty-item">Nenhum rastreador detectado até o momento.</li>
@@ -7605,6 +9403,7 @@ if (isDownloads) {
   <script src="components/fire-animation.js"></script>
   <script src="components/find-bar.js"></script>
   <script src="components/permission-sheet.js"></script>
+  <script src="components/download-risk-sheet.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
@@ -7612,7 +9411,7 @@ if (isDownloads) {
 
 ---
 
-### 3.27 `src/renderer/app.js`
+### 4.31 `src/renderer/app.js`
 
 ```javascript
 // =============================================================================
@@ -7620,6 +9419,15 @@ if (isDownloads) {
 // Ponto de entrada do processo de renderização (UI)
 // Orquestra os componentes e consome o estado reativo via window.browserAPI
 // =============================================================================
+
+// Tratamento de erros e logs consistentes na interface gráfica
+window.addEventListener('error', (event) => {
+  console.error('[Dragon Renderer] Erro na interface:', event.error || event.message);
+});
+
+window.addEventListener('unhandledrejection', (event) => {
+  console.error('[Dragon Renderer] Rejeição de Promise não tratada na interface:', event.reason);
+});
 
 document.addEventListener('DOMContentLoaded', async () => {
   // 1. Instanciação dos componentes visuais
@@ -7629,6 +9437,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const privacyShield = new window.PrivacyShieldComponent();
   const findBar = new window.FindBarComponent();
   const permissionSheet = new window.PermissionSheetComponent();
+  const downloadRiskSheet = new window.DownloadRiskSheetComponent();
 
   // Componentes do Dragão Azul (Apagar Tudo)
   const fireAnimation = new window.FireAnimationComponent();
@@ -7746,7 +9555,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 ---
 
-### 3.28 `src/renderer/styles/theme.css`
+### 4.32 `src/renderer/styles/theme.css`
 
 ```css
 /* ==========================================================================
@@ -7852,7 +9661,7 @@ body.theme-light {
 
 ---
 
-### 3.29 `src/renderer/styles/base.css`
+### 4.33 `src/renderer/styles/base.css`
 
 ```css
 /* ==========================================================================
@@ -7917,7 +9726,7 @@ input {
 
 ---
 
-### 3.30 `src/renderer/styles/components.css`
+### 4.34 `src/renderer/styles/components.css`
 
 ```css
 /* ==========================================================================
@@ -8663,8 +10472,61 @@ body.ui-locked * {
 }
 
 .shield-section-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.shield-grade-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+  font-size: 20px;
+  font-weight: 800;
+  flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  transition: all 0.2s ease;
+}
+
+.shield-grade-badge.grade-a,
+.shield-grade-badge.grade-b {
+  background: rgba(34, 197, 94, 0.16);
+  color: #22c55e;
+  border: 1.5px solid rgba(34, 197, 94, 0.45);
+}
+
+.shield-grade-badge.grade-c {
+  background: rgba(234, 179, 8, 0.16);
+  color: #eab308;
+  border: 1.5px solid rgba(234, 179, 8, 0.45);
+}
+
+.shield-grade-badge.grade-d,
+.shield-grade-badge.grade-f {
+  background: rgba(239, 68, 68, 0.16);
+  color: #ef4444;
+  border: 1.5px solid rgba(239, 68, 68, 0.45);
+}
+
+.shield-metrics-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.shield-trackers-count {
   font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-medium);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.shield-popups-count {
+  font-size: 11px;
   color: var(--color-text-secondary);
 }
 
@@ -9106,6 +10968,164 @@ body.html-fullscreen #app {
   background-color: var(--color-accent-hover);
 }
 
+/* =============================================================================
+   Barra de Redirecionamento Bloqueado (ETAPA 1)
+   ============================================================================= */
+
+.redirect-blocked-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background-color: var(--color-bg-secondary, #1e1e24);
+  border-bottom: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.08));
+  padding: 6px 16px;
+  font-size: var(--font-size-sm, 13px);
+  color: var(--color-text-primary, #ffffff);
+  animation: slide-down-banner 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 100;
+}
+
+.redirect-bar-content {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.redirect-bar-icon {
+  width: 16px;
+  height: 16px;
+  color: #f59e0b;
+  flex-shrink: 0;
+}
+
+.redirect-bar-text {
+  font-weight: 500;
+}
+
+.redirect-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-allow-redirect {
+  background-color: var(--color-accent, #3b82f6);
+  border: none;
+  color: #ffffff;
+  padding: 4px 12px;
+  border-radius: var(--radius-sm, 4px);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.btn-allow-redirect:hover {
+  opacity: 0.9;
+}
+
+.btn-dismiss-redirect {
+  background: transparent;
+  border: none;
+  color: var(--color-text-secondary, #9ca3af);
+  padding: 4px 8px;
+  border-radius: var(--radius-sm, 4px);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.btn-dismiss-redirect:hover {
+  color: #ffffff;
+}
+
+@keyframes slide-down-banner {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* --------------------------------------------------------------------------
+   14. AVISO DE DOWNLOAD POTENCIALMENTE PERIGOSO (ETAPA 4)
+   -------------------------------------------------------------------------- */
+#download-risk-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(8, 19, 43, 0.65);
+  backdrop-filter: blur(4px);
+  z-index: 4800;
+  display: none;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+#download-risk-overlay.visible {
+  display: flex;
+}
+
+#download-risk-panel {
+  background-color: var(--color-bg-toolbar);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  border-bottom: none;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  padding: 24px 28px;
+  max-width: 540px;
+  width: 100%;
+  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.6);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  animation: slide-up 0.2s ease-out;
+}
+
+.risk-warning-icon {
+  background: rgba(239, 68, 68, 0.15) !important;
+  color: #ef4444 !important;
+}
+
+.risk-highlight {
+  color: #f87171;
+  font-weight: 600;
+}
+
+.btn-risk-cancel {
+  background-color: #ef4444;
+  border: none;
+  color: #ffffff;
+  padding: 8px 20px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+  transition: background-color var(--transition-fast);
+}
+
+.btn-risk-cancel:hover {
+  background-color: #dc2626;
+}
+
+.btn-risk-continue {
+  background: transparent;
+  border: 1px solid var(--color-border-subtle);
+  color: var(--color-text-secondary);
+  padding: 8px 16px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-size: 13px;
+  transition: all var(--transition-fast);
+}
+
+.btn-risk-continue:hover {
+  background-color: var(--color-bg-button-hover);
+  color: var(--color-text-primary);
+}
+
+
+
 
 
 
@@ -9113,7 +11133,7 @@ body.html-fullscreen #app {
 
 ---
 
-### 3.31 `src/renderer/components/tabs-view.js`
+### 4.35 `src/renderer/components/tabs-view.js`
 
 ```javascript
 // =============================================================================
@@ -9386,7 +11406,7 @@ window.TabsViewComponent = TabsViewComponent;
 
 ---
 
-### 3.32 `src/renderer/components/toolbar.js`
+### 4.36 `src/renderer/components/toolbar.js`
 
 ```javascript
 // =============================================================================
@@ -9402,6 +11422,13 @@ class ToolbarComponent {
     this.btnHome = document.getElementById('btn-home');
     this.btnDownloads = document.getElementById('btn-downloads');
     this.btnSettings = document.getElementById('btn-settings');
+    this.redirectBar = document.getElementById('redirect-blocked-bar');
+    this.redirectText = document.getElementById('redirect-blocked-text');
+    this.btnAllowRedirect = document.getElementById('btn-allow-redirect');
+    this.btnDismissRedirect = document.getElementById('btn-dismiss-redirect');
+    this.blockedRedirectUrl = null;
+    this.redirectDismissTimer = null;
+    this.activeTabId = null;
     this.isLoading = false;
 
     this.initEvents();
@@ -9477,6 +11504,57 @@ class ToolbarComponent {
         }
       });
     }
+
+    if (this.btnAllowRedirect) {
+      this.btnAllowRedirect.addEventListener('click', () => {
+        if (this.blockedRedirectUrl && window.browserAPI && typeof window.browserAPI.allowRedirect === 'function') {
+          window.browserAPI.allowRedirect(this.blockedRedirectUrl);
+        }
+        this.hideRedirectBar();
+      });
+    }
+
+    if (this.btnDismissRedirect) {
+      this.btnDismissRedirect.addEventListener('click', () => {
+        this.hideRedirectBar();
+      });
+    }
+
+    if (window.browserAPI && typeof window.browserAPI.onRedirectBlocked === 'function') {
+      window.browserAPI.onRedirectBlocked((payload) => {
+        if (!payload || !payload.targetUrl) return;
+        this.showRedirectBar(payload.domain || payload.targetUrl, payload.targetUrl);
+      });
+    }
+  }
+
+  showRedirectBar(domain, targetUrl) {
+    this.blockedRedirectUrl = targetUrl;
+    if (this.redirectText) {
+      this.redirectText.textContent = `Redirecionamento bloqueado — ${domain}`;
+    }
+    if (this.redirectBar) {
+      this.redirectBar.hidden = false;
+      this.redirectBar.classList.add('visible');
+    }
+    if (this.redirectDismissTimer) {
+      clearTimeout(this.redirectDismissTimer);
+    }
+    this.redirectDismissTimer = setTimeout(() => {
+      this.hideRedirectBar();
+    }, 8000);
+  }
+
+  hideRedirectBar() {
+    if (this.redirectDismissTimer) {
+      clearTimeout(this.redirectDismissTimer);
+      this.redirectDismissTimer = null;
+    }
+    this.blockedRedirectUrl = null;
+    if (this.redirectBar) {
+      this.redirectBar.hidden = true;
+      this.redirectBar.classList.remove('visible');
+    }
   }
 
   /**
@@ -9485,6 +11563,11 @@ class ToolbarComponent {
    */
   update(state) {
     if (!state) return;
+
+    if (state.activeTabId && state.activeTabId !== this.activeTabId) {
+      this.activeTabId = state.activeTabId;
+      this.hideRedirectBar();
+    }
 
     this.isLoading = Boolean(state.isLoading);
 
@@ -9521,7 +11604,7 @@ window.ToolbarComponent = ToolbarComponent;
 
 ---
 
-### 3.33 `src/renderer/components/addressbar.js`
+### 4.37 `src/renderer/components/addressbar.js`
 
 ```javascript
 // =============================================================================
@@ -9911,7 +11994,7 @@ window.AddressBarComponent = AddressBarComponent;
 
 ---
 
-### 3.34 `src/renderer/components/find-bar.js`
+### 4.38 `src/renderer/components/find-bar.js`
 
 ```javascript
 // =============================================================================
@@ -10040,7 +12123,7 @@ window.FindBarComponent = FindBarComponent;
 
 ---
 
-### 3.35 `src/renderer/components/permission-sheet.js`
+### 4.39 `src/renderer/components/permission-sheet.js`
 
 ```javascript
 // =============================================================================
@@ -10174,7 +12257,131 @@ window.PermissionSheetComponent = PermissionSheetComponent;
 
 ---
 
-### 3.36 `src/renderer/components/privacy-shield.js`
+### 4.40 `src/renderer/components/download-risk-sheet.js`
+
+```javascript
+// =============================================================================
+// src/renderer/components/download-risk-sheet.js
+// Modal estilo bottom-sheet para aviso de downloads de risco (ETAPA 4)
+// =============================================================================
+
+class DownloadRiskSheetComponent {
+  constructor() {
+    this.overlay = document.getElementById('download-risk-overlay');
+    this.titleEl = document.getElementById('download-risk-title');
+    this.descEl = document.getElementById('download-risk-desc');
+    this.btnCancel = document.getElementById('btn-download-risk-cancel');
+    this.btnConfirm = document.getElementById('btn-download-risk-confirm');
+
+    this.currentPrompt = null;
+    this.queue = [];
+
+    this.initEvents();
+  }
+
+  initEvents() {
+    if (this.btnCancel) {
+      this.btnCancel.addEventListener('click', () => {
+        this.respond(false);
+      });
+    }
+
+    if (this.btnConfirm) {
+      this.btnConfirm.addEventListener('click', () => {
+        this.respond(true);
+      });
+    }
+
+    if (window.browserAPI && typeof window.browserAPI.onDownloadRiskPrompt === 'function') {
+      window.browserAPI.onDownloadRiskPrompt((payload) => {
+        this.enqueue(payload);
+      });
+    }
+  }
+
+  enqueue(payload) {
+    if (!payload || !payload.downloadId) return;
+
+    if (!this.currentPrompt) {
+      this.display(payload);
+    } else {
+      this.queue.push(payload);
+    }
+  }
+
+  display(payload) {
+    if (!payload || !this.overlay) return;
+    this.currentPrompt = payload;
+
+    const filename = payload.filename || 'arquivo executável';
+    const domain = payload.domain || 'origem desconhecida';
+
+    if (this.titleEl) {
+      this.titleEl.textContent = 'Arquivo potencialmente perigoso';
+    }
+
+    if (this.descEl) {
+      this.descEl.innerHTML = `O arquivo <strong class="risk-highlight">${this.escapeHtml(filename)}</strong> de <strong class="risk-highlight">${this.escapeHtml(domain)}</strong> pode danificar o seu computador ou executar ações indesejadas. Deseja mantê-lo?`;
+    }
+
+    if (window.browserAPI && typeof window.browserAPI.showOverlay === 'function') {
+      window.browserAPI.showOverlay();
+    }
+
+    this.overlay.classList.add('visible');
+  }
+
+  escapeHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  async respond(allow) {
+    if (!this.currentPrompt) return;
+
+    const { downloadId } = this.currentPrompt;
+    this.currentPrompt = null;
+
+    try {
+      if (window.browserAPI) {
+        if (allow && typeof window.browserAPI.confirmRiskDownload === 'function') {
+          await window.browserAPI.confirmRiskDownload(downloadId);
+        } else if (!allow && typeof window.browserAPI.cancelRiskDownload === 'function') {
+          await window.browserAPI.cancelRiskDownload(downloadId);
+        }
+      }
+    } catch (err) {
+      console.warn('[DownloadRisk] Erro ao responder prompt:', err);
+    }
+
+    if (this.queue.length > 0) {
+      const next = this.queue.shift();
+      this.display(next);
+    } else {
+      this.close();
+    }
+  }
+
+  close() {
+    if (this.overlay) {
+      this.overlay.classList.remove('visible');
+    }
+    if (window.browserAPI && typeof window.browserAPI.hideOverlay === 'function') {
+      window.browserAPI.hideOverlay();
+    }
+  }
+}
+
+window.DownloadRiskSheetComponent = DownloadRiskSheetComponent;
+```
+
+---
+
+### 4.41 `src/renderer/components/privacy-shield.js`
 
 ```javascript
 // =============================================================================
@@ -10192,6 +12399,8 @@ class PrivacyShieldComponent {
     this.statusTextEl = document.getElementById('shield-status-text');
     this.toggleBtn = document.getElementById('btn-shield-toggle');
     this.counterEl = document.getElementById('shield-trackers-count');
+    this.popupsCountEl = document.getElementById('shield-popups-count');
+    this.gradeBadge = document.getElementById('shield-grade-badge');
     this.trackersListEl = document.getElementById('shield-trackers-list');
     this.backdrop = document.getElementById('shield-panel-backdrop');
 
@@ -10305,6 +12514,20 @@ class PrivacyShieldComponent {
           : `${info.count} rastreadores bloqueados nesta página`;
       }
 
+      if (this.popupsCountEl) {
+        const popups = info.popupsBlocked || 0;
+        this.popupsCountEl.textContent = popups === 1
+          ? '1 pop-up / redirecionamento bloqueado'
+          : `${popups} pop-ups / redirecionamentos bloqueados`;
+      }
+
+      if (this.gradeBadge) {
+        const grade = (info.grade || 'A').toUpperCase();
+        this.gradeBadge.textContent = grade;
+        this.gradeBadge.className = `shield-grade-badge grade-${grade.toLowerCase()}`;
+        this.gradeBadge.title = `Classificação de privacidade: Nota ${grade}`;
+      }
+
       if (this.trackersListEl) {
         while (this.trackersListEl.firstChild) {
           this.trackersListEl.removeChild(this.trackersListEl.firstChild);
@@ -10383,6 +12606,13 @@ class PrivacyShieldComponent {
       }
     }
 
+    if (this.gradeBadge && info.grade) {
+      const grade = info.grade.toUpperCase();
+      this.gradeBadge.textContent = grade;
+      this.gradeBadge.className = `shield-grade-badge grade-${grade.toLowerCase()}`;
+      this.gradeBadge.title = `Classificação de privacidade: Nota ${grade}`;
+    }
+
     if (this.btn) {
       if (!info.isProtected) {
         this.btn.classList.add('protection-off');
@@ -10406,7 +12636,7 @@ window.PrivacyShieldComponent = PrivacyShieldComponent;
 
 ---
 
-### 3.37 `src/renderer/components/fire-button.js`
+### 4.42 `src/renderer/components/fire-button.js`
 
 ```javascript
 // =============================================================================
@@ -10482,7 +12712,7 @@ window.FireButtonComponent = FireButtonComponent;
 
 ---
 
-### 3.38 `src/renderer/components/fire-sheet.js`
+### 4.43 `src/renderer/components/fire-sheet.js`
 
 ```javascript
 // =============================================================================
@@ -10616,7 +12846,7 @@ window.FireSheetComponent = FireSheetComponent;
 
 ---
 
-### 3.39 `src/renderer/components/fire-animation.js`
+### 4.44 `src/renderer/components/fire-animation.js`
 
 ```javascript
 // =============================================================================
@@ -11185,11 +13415,16 @@ class FireAnimationComponent {
       // Atualiza badge central no pico
       this.updateCenterBadge(phase);
 
-      // Renderiza quadro em WebGL ou Fallback 2D
-      if (this.useWebGL && this.gl) {
-        this.renderWebGLFrame(currentTime - startTime, coverage, dissipation);
-      } else {
-        this.renderCanvas2DFrame(coverage, dissipation, phase);
+      // Renderiza quadro em WebGL ou Fallback 2D com tolerância a falhas
+      try {
+        if (this.useWebGL && this.gl) {
+          this.renderWebGLFrame(currentTime - startTime, coverage, dissipation);
+        } else {
+          this.renderCanvas2DFrame(coverage, dissipation, phase);
+        }
+      } catch (renderErr) {
+        console.warn('[FireAnimation] Falha na renderização de quadro, alternando para fallback:', renderErr);
+        this.useWebGL = false;
       }
 
       // Finalização da dissipação
@@ -11485,7 +13720,7 @@ window.FireAnimationComponent = FireAnimationComponent;
 
 ---
 
-### 3.40 `pages/settings.html`
+### 4.45 `pages/settings.html`
 
 ```html
 <!DOCTYPE html>
@@ -11541,19 +13776,45 @@ window.FireAnimationComponent = FireAnimationComponent;
     .sidebar-logo {
       width: 32px;
       height: 32px;
-      border-radius: 8px;
-      background: linear-gradient(135deg, var(--color-accent, #4d7cff) 0%, #0194FF 100%);
+      background: transparent;
       display: flex;
       align-items: center;
       justify-content: center;
-      box-shadow: 0 4px 12px rgba(1, 148, 255, 0.3);
       flex-shrink: 0;
+      filter: drop-shadow(0 0 5px var(--fire-mid, #29B6FF)) drop-shadow(0 0 10px var(--fire-main, #0194FF));
+      animation: sidebar-glow-pulse 3s ease-in-out infinite;
+      transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), filter 0.25s ease;
+      cursor: default;
+    }
+
+    .sidebar-header:hover .sidebar-logo {
+      transform: scale(1.1);
+      filter: drop-shadow(0 0 7px var(--fire-mid, #29B6FF)) drop-shadow(0 0 14px var(--color-accent, #4d7cff));
+      animation-play-state: paused;
+    }
+
+    .sidebar-logo img {
+      width: 26px;
+      height: 26px;
+      object-fit: contain;
+      display: block;
+      user-select: none;
+      -webkit-user-drag: none;
     }
 
     .sidebar-logo svg {
       width: 18px;
       height: 18px;
       fill: #ffffff;
+    }
+
+    @keyframes sidebar-glow-pulse {
+      0%, 100% {
+        filter: drop-shadow(0 0 4px var(--fire-mid, #29B6FF)) drop-shadow(0 0 9px var(--fire-main, #0194FF));
+      }
+      50% {
+        filter: drop-shadow(0 0 7px var(--fire-mid, #29B6FF)) drop-shadow(0 0 14px var(--color-accent, #4d7cff));
+      }
     }
 
     .sidebar-title {
@@ -12158,7 +14419,7 @@ window.FireAnimationComponent = FireAnimationComponent;
   <aside class="sidebar">
     <div class="sidebar-header">
       <div class="sidebar-logo">
-        <img src="../assets/icons/favicon-circle.png" alt="Dragon" style="width: 24px; height: 24px; object-fit: contain;">
+        <img src="../assets/icons/favicon-circle.png" alt="Dragon">
       </div>
       <span class="sidebar-title">Configurações</span>
     </div>
@@ -12194,6 +14455,20 @@ window.FireAnimationComponent = FireAnimationComponent;
           <path d="M8 1a2 2 0 0 1 2 2v4H6V3a2 2 0 0 1 2-2zm3 6V3a3 3 0 0 0-6 0v4a2 2 0 0 0-2 2v5a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/>
         </svg>
         <span>Permissões</span>
+      </button>
+
+      <!-- Item 5: Privacidade Avançada (Fingerprinting - ETAPA 5) -->
+      <button class="nav-item" data-target="panel-fingerprint">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M2 12C2 6.5 6.5 2 12 2a10 10 0 0 1 8 4"/>
+          <path d="M5 19.5C5.5 18 6 15 6 12c0-.7.12-1.37.34-2"/>
+          <path d="M17.29 21.02c.12-.6.18-1.2.18-1.85 0-3.5-1.5-6.5-4.5-8.5"/>
+          <path d="M9.08 9c.6-.8 1.43-1.37 2.42-1.63"/>
+          <path d="M12 22a10 10 0 0 0 6.5-2.5"/>
+          <path d="M12 6a6 6 0 0 1 6 6c0 2.22-1.21 4.16-3 5.2"/>
+          <path d="M8.7 13.5c-.37-.8-.57-1.7-.57-2.65a4 4 0 0 1 4-4c1.1 0 2.1.45 2.83 1.17"/>
+        </svg>
+        <span>Privacidade Avançada</span>
       </button>
     </nav>
 
@@ -12308,6 +14583,20 @@ window.FireAnimationComponent = FireAnimationComponent;
             <option value="1.75">175%</option>
             <option value="2.0">200%</option>
           </select>
+        </div>
+      </div>
+
+      <!-- Limpeza de Dados ao Fechar -->
+      <div class="settings-card">
+        <div class="toggle-row">
+          <div class="toggle-info">
+            <span class="toggle-title">Limpar dados ao fechar o navegador</span>
+            <span class="toggle-desc">Apaga histórico, cookies, cache e sessões automaticamente ao fechar o Dragon.</span>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="chk-clear-on-exit" />
+            <span class="slider"></span>
+          </label>
         </div>
       </div>
     </section>
@@ -12532,6 +14821,297 @@ window.FireAnimationComponent = FireAnimationComponent;
       </div>
     </section>
 
+    <!-- -----------------------------------------------------------------------
+         PAINEL 5: PRIVACIDADE AVANÇADA (SISTEMA DE FINGERPRINTING MULTIVETORIAL)
+         ----------------------------------------------------------------------- -->
+    <section id="panel-fingerprint" class="panel">
+      <div class="panel-header" style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px;">
+        <div>
+          <h1>Privacidade Avançada</h1>
+          <p>Configuração profunda da impressão digital (fingerprint) do Dragon com validação de consistência e reset de identidade.</p>
+        </div>
+        <button type="button" id="btn-reset-fingerprint" class="btn btn-primary" style="display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; font-weight: 600; box-shadow: 0 0 12px var(--fire-glow, rgba(1,148,255,0.4));">
+          <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+            <path d="M11.534 7h3.932a.25.25 0 0 1 .192.41l-1.966 2.36a.25.25 0 0 1-.384 0l-1.966-2.36a.25.25 0 0 1 .192-.41zm-11 2h3.932a.25.25 0 0 0 .192-.41L2.692 6.23a.25.25 0 0 0-.384 0L.342 8.59A.25.25 0 0 0 .534 9z"/>
+            <path fill-rule="evenodd" d="M8 3c-1.552 0-2.94.707-3.857 1.818a.5.5 0 1 1-.771-.636A4.985 4.985 0 0 1 8 2c2.166 0 3.993 1.373 4.678 3.308a.5.5 0 0 1-.942.338C11.144 4.025 9.697 3 8 3zm0 10c1.552 0 2.94-.707 3.857-1.818a.5.5 0 1 1 .771.636A4.985 4.985 0 0 1 8 14c-2.166 0-3.993-1.373-4.678-3.308a.5.5 0 0 1 .942-.338C4.856 11.975 6.303 13 8 13z"/>
+          </svg>
+          Resetar Fingerprint
+        </button>
+      </div>
+
+      <!-- Banner de Inconsistência e Avisos -->
+      <div id="fp-consistency-box" style="display: none; padding: 12px 16px; border-radius: var(--radius-md, 6px); margin-bottom: 20px; font-size: 13px; line-height: 1.5;"></div>
+
+      <div class="settings-card">
+        <div class="toggle-row">
+          <div class="toggle-info">
+            <span class="toggle-title">Reduzir impressão digital do navegador (Fingerprinting)</span>
+            <span class="toggle-desc">Ativa as proteções ativas e máscaras em páginas web normais. <strong>Esta configuração é global e NÃO cria perfis nem contas separadas.</strong> O botão "Resetar Fingerprint" sorteia uma nova identidade coerente a qualquer momento.</span>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="toggle-fp-enabled" />
+            <span class="slider"></span>
+          </label>
+        </div>
+
+        <div id="fp-suboptions" style="display: flex; flex-direction: column; gap: 24px; margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--color-border-subtle, #2d2d38); transition: opacity var(--transition-fast, 0.15s);">
+          
+          <!-- GRUPO A: IDENTIDADE DO SISTEMA -->
+          <div>
+            <h3 class="card-title" style="margin-bottom: 4px;">Grupo A — Identidade do Sistema</h3>
+            <p class="card-desc">Define como o sistema operacional, navegador, fuso horário e idioma são apresentados para a web.</p>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+              <div class="form-group">
+                <label for="select-fp-os">Sistema Operacional Alvo</label>
+                <select id="select-fp-os">
+                  <option value="windows11">Windows 11 (Padrão Moderno)</option>
+                  <option value="windows10">Windows 10</option>
+                  <option value="macos">macOS (Sonoma / Sequoia)</option>
+                  <option value="linux">Linux (Ubuntu / Fedora)</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="select-fp-browser">Navegador Relatado</label>
+                <select id="select-fp-browser">
+                  <option value="chrome">Google Chrome (Recomendado)</option>
+                  <option value="edge">Microsoft Edge</option>
+                  <option value="firefox">Mozilla Firefox</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="select-fp-platform">Plataforma (navigator.platform)</label>
+                <select id="select-fp-platform">
+                  <option value="auto">Automático (Coerente com o SO)</option>
+                  <option value="Win32">Win32 (Windows)</option>
+                  <option value="MacIntel">MacIntel (macOS)</option>
+                  <option value="Linux x86_64">Linux x86_64 (Linux)</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="select-fp-locale">Idioma do Navegador (Locale)</label>
+                <select id="select-fp-locale">
+                  <option value="pt-BR">Português do Brasil (pt-BR)</option>
+                  <option value="en-US">English / Estados Unidos (en-US)</option>
+                  <option value="es-ES">Español / Espanha (es-ES)</option>
+                  <option value="fr-FR">Français / França (fr-FR)</option>
+                  <option value="de-DE">Deutsch / Alemanha (de-DE)</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="select-fp-timezone">Fuso Horário (Timezone)</label>
+                <select id="select-fp-timezone">
+                  <option value="America/Sao_Paulo">América/São Paulo (GMT-3)</option>
+                  <option value="America/New_York">América/Nova York (GMT-5 / EDT)</option>
+                  <option value="America/Chicago">América/Chicago (GMT-6 / CDT)</option>
+                  <option value="America/Los_Angeles">América/Los Angeles (GMT-8 / PDT)</option>
+                  <option value="Europe/London">Europa/Londres (GMT+0 / BST)</option>
+                  <option value="Europe/Paris">Europa/Paris (GMT+1 / CEST)</option>
+                  <option value="Europe/Berlin">Europa/Berlim (GMT+1 / CEST)</option>
+                  <option value="Europe/Madrid">Europa/Madri (GMT+1 / CEST)</option>
+                  <option value="Asia/Tokyo">Ásia/Tóquio (GMT+9)</option>
+                  <option value="UTC">UTC (Universal / GMT+0)</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="input-fp-ua">User-Agent</label>
+                <input type="text" id="input-fp-ua" placeholder="auto (gerado automaticamente pelo SO e Navegador)" />
+                <span class="help-text">Digite <code>auto</code> para derivar automaticamente ou insira uma assinatura personalizada.</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- GRUPO B: HARDWARE -->
+          <div style="border-top: 1px solid var(--color-border-subtle, #2d2d38); padding-top: 16px;">
+            <h3 class="card-title" style="margin-bottom: 4px;">Grupo B — Hardware e Resolução</h3>
+            <p class="card-desc">Especificações técnicas de tela, processador e memória relatadas para as páginas.</p>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+              <div class="form-group">
+                <label for="select-fp-resolution">Resolução de Tela</label>
+                <select id="select-fp-resolution">
+                  <option value="1920x1080">1920 × 1080 (Full HD, Mais Comum)</option>
+                  <option value="2560x1440">2560 × 1440 (2K / QHD)</option>
+                  <option value="1366x768">1366 × 768 (Notebook Padrão)</option>
+                  <option value="1536x864">1536 × 864 (Notebook Alta Densidade)</option>
+                  <option value="2880x1800">2880 × 1800 (MacBook Pro Retina)</option>
+                  <option value="3840x2160">3840 × 2160 (4K UHD)</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="select-fp-dpr">Device Pixel Ratio (DPR)</label>
+                <select id="select-fp-dpr">
+                  <option value="auto">Automático (Baseado na Resolução)</option>
+                  <option value="1">1.0 (Padrão 100%)</option>
+                  <option value="1.25">1.25 (Escala 125%)</option>
+                  <option value="1.5">1.5 (Escala 150%)</option>
+                  <option value="2">2.0 (Retina / Alta Densidade)</option>
+                  <option value="3">3.0 (Ultra Densidade)</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="select-fp-cores">Núcleos de Processamento (CPU Cores)</label>
+                <select id="select-fp-cores">
+                  <option value="2">2 núcleos</option>
+                  <option value="4">4 núcleos</option>
+                  <option value="6">6 núcleos</option>
+                  <option value="8">8 núcleos (Mais comum)</option>
+                  <option value="12">12 núcleos</option>
+                  <option value="16">16 núcleos</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="select-fp-memory">Memória RAM Relatada</label>
+                <select id="select-fp-memory">
+                  <option value="2">2 GB</option>
+                  <option value="4">4 GB</option>
+                  <option value="8">8 GB (Mais comum)</option>
+                  <option value="16">16 GB</option>
+                  <option value="32">32 GB</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="toggle-row" style="margin-top: 14px;">
+              <div class="toggle-info">
+                <span class="toggle-title">Suporte a Tela Sensível ao Toque (Touch)</span>
+                <span class="toggle-desc">Define <code>navigator.maxTouchPoints</code>. Desative para computadores desktop tradicionais.</span>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="toggle-fp-touch" />
+                <span class="slider"></span>
+              </label>
+            </div>
+          </div>
+
+          <!-- GRUPO C: GPU / WEBGL -->
+          <div style="border-top: 1px solid var(--color-border-subtle, #2d2d38); padding-top: 16px;">
+            <h3 class="card-title" style="margin-bottom: 4px;">Grupo C — Placa de Vídeo e WebGL</h3>
+            <p class="card-desc">Fabricante e modelo da placa de vídeo expostos via extensões não-mascaradas do WebGL.</p>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+              <div class="form-group">
+                <label for="input-fp-webgl-vendor">Fabricante da GPU (Vendor)</label>
+                <input type="text" id="input-fp-webgl-vendor" placeholder="auto (gerado automaticamente pelo SO)" />
+              </div>
+
+              <div class="form-group">
+                <label for="input-fp-webgl-renderer">Renderizador de Vídeo (Renderer)</label>
+                <input type="text" id="input-fp-webgl-renderer" placeholder="auto (gerado automaticamente pelo SO)" />
+              </div>
+
+              <div class="form-group" style="grid-column: span 2;">
+                <label for="select-fp-webgl-mode">Proteção de Renderização WebGL (readPixels)</label>
+                <select id="select-fp-webgl-mode">
+                  <option value="noise">Ruído Determinístico por Sessão (Recomendado — não quebra sites)</option>
+                  <option value="real">Real (Sem Alteração)</option>
+                  <option value="mask">Máscara Fixa</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- GRUPO D: CANVAS, ÁUDIO, CLIENTRECTS & FONTES -->
+          <div style="border-top: 1px solid var(--color-border-subtle, #2d2d38); padding-top: 16px;">
+            <h3 class="card-title" style="margin-bottom: 4px;">Grupo D — Canvas, Áudio, ClientRects & Fontes</h3>
+            <p class="card-desc">Vetores biométricos complexos que geram assinaturas cruzadas de renderização de imagem e som.</p>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+              <div class="form-group">
+                <label for="select-fp-canvas-mode">Proteção do Canvas 2D (toDataURL / getImageData)</label>
+                <select id="select-fp-canvas-mode">
+                  <option value="noise">Ruído Determinístico por Sessão (Recomendado — imperceptível)</option>
+                  <option value="real">Real (Sem Alteração)</option>
+                  <option value="mask">Máscara Fixa</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="select-fp-audio-mode">Proteção de AudioContext / Frequência Sonora</label>
+                <select id="select-fp-audio-mode">
+                  <option value="noise">Ruído Determinístico por Sessão (Recomendado)</option>
+                  <option value="real">Real (Sem Alteração)</option>
+                  <option value="mask">Máscara Fixa</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="select-fp-clientrects-mode">Geometria de Elementos (ClientRects)</label>
+                <select id="select-fp-clientrects-mode">
+                  <option value="noise">Micro-Ruído Determinístico (Recomendado — ±0.05px)</option>
+                  <option value="mask">Arredondamento para Inteiros</option>
+                  <option value="real">Real (Sem Alteração)</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="select-fp-fonts-mode">Enumeração de Fontes do Sistema</label>
+                <select id="select-fp-fonts-mode">
+                  <option value="mask">Filtrar para Fontes Padrão do SO Alvo (Recomendado)</option>
+                  <option value="real">Real (Expõe todas as fontes instaladas)</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- GRUPO E: OUTROS VETORES -->
+          <div style="border-top: 1px solid var(--color-border-subtle, #2d2d38); padding-top: 16px;">
+            <h3 class="card-title" style="margin-bottom: 4px;">Grupo E — Outros Vetores (WebRTC, Bateria, Permissões)</h3>
+            <p class="card-desc">Controle de vazamentos de rede local e APIs de hardware auxiliares.</p>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+              <div class="form-group">
+                <label for="select-fp-webrtc-mode">Política de WebRTC</label>
+                <select id="select-fp-webrtc-mode">
+                  <option value="proxy">Interface Pública Padrão (Sem Vazamento de IP Local)</option>
+                  <option value="disabled">Desabilitar WebRTC Completamente</option>
+                  <option value="real">Real (Sem Restrições)</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="select-fp-media-count">Dispositivos de Mídia Simulados (enumerateDevices)</label>
+                <select id="select-fp-media-count">
+                  <option value="2">2 dispositivos (Microfone + Câmera)</option>
+                  <option value="1">1 dispositivo (Apenas Microfone)</option>
+                  <option value="3">3 dispositivos (Microfone + Câmera + Alto-falante)</option>
+                  <option value="0">Nenhum dispositivo de mídia</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="select-fp-speech-voices">Vozes de Síntese de Fala (SpeechVoices)</label>
+                <select id="select-fp-speech-voices">
+                  <option value="mask">Máscara Padrão do SO Alvo</option>
+                  <option value="real">Real (Sem Alteração)</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="select-fp-battery-mode">Status de Bateria (getBattery)</label>
+                <select id="select-fp-battery-mode">
+                  <option value="mask">Mascarar (Sempre 100% Carregando)</option>
+                  <option value="real">Real (Nível Real da Bateria)</option>
+                </select>
+              </div>
+
+              <div class="form-group" style="grid-column: span 2;">
+                <label for="select-fp-permissions-mode">Consulta de Permissões (permissions.query)</label>
+                <select id="select-fp-permissions-mode">
+                  <option value="mask">Mascarar como Prompt Padrão (Recomendado)</option>
+                  <option value="real">Real (Expõe permissões já concedidas)</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
   </main>
 
   <!-- =========================================================================
@@ -12544,7 +15124,7 @@ window.FireAnimationComponent = FireAnimationComponent;
 
 ---
 
-### 3.41 `pages/settings.js`
+### 4.46 `pages/settings.js`
 
 ```javascript
 // =============================================================================
@@ -12587,6 +15167,7 @@ const inputStartupUrl = document.getElementById('input-startup-url');
 
 const inputHomeUrl = document.getElementById('input-home-url');
 const selectZoom = document.getElementById('select-zoom');
+const chkClearOnExit = document.getElementById('chk-clear-on-exit');
 
 // Seção Personalização
 const colorSwatches = document.querySelectorAll('.color-swatch');
@@ -12624,6 +15205,45 @@ const proxyTestStatus = document.getElementById('proxy-test-status');
 // Seção Permissões de Sites
 const permissionsListContainer = document.getElementById('permissions-list-container');
 const permissionsEmpty = document.getElementById('permissions-empty');
+
+// Seção Privacidade Avançada (Fingerprinting Multivetorial)
+const btnResetFingerprint = document.getElementById('btn-reset-fingerprint');
+const fpConsistencyBox = document.getElementById('fp-consistency-box');
+const toggleFpEnabled = document.getElementById('toggle-fp-enabled');
+const fpSuboptions = document.getElementById('fp-suboptions');
+
+// Grupo A — Identidade do Sistema
+const selectFpOs = document.getElementById('select-fp-os');
+const selectFpBrowser = document.getElementById('select-fp-browser');
+const selectFpPlatform = document.getElementById('select-fp-platform');
+const selectFpLocale = document.getElementById('select-fp-locale');
+const selectFpTimezone = document.getElementById('select-fp-timezone');
+const inputFpUa = document.getElementById('input-fp-ua');
+
+// Grupo B — Hardware
+const selectFpResolution = document.getElementById('select-fp-resolution');
+const selectFpDpr = document.getElementById('select-fp-dpr');
+const selectFpCores = document.getElementById('select-fp-cores');
+const selectFpMemory = document.getElementById('select-fp-memory');
+const toggleFpTouch = document.getElementById('toggle-fp-touch');
+
+// Grupo C — GPU / WebGL
+const inputFpWebglVendor = document.getElementById('input-fp-webgl-vendor');
+const inputFpWebglRenderer = document.getElementById('input-fp-webgl-renderer');
+const selectFpWebglMode = document.getElementById('select-fp-webgl-mode');
+
+// Grupo D — Canvas, Áudio, ClientRects & Fontes
+const selectFpCanvasMode = document.getElementById('select-fp-canvas-mode');
+const selectFpAudioMode = document.getElementById('select-fp-audio-mode');
+const selectFpClientRectsMode = document.getElementById('select-fp-clientrects-mode');
+const selectFpFontsMode = document.getElementById('select-fp-fonts-mode');
+
+// Grupo E — Outros Vetores
+const selectFpWebrtcMode = document.getElementById('select-fp-webrtc-mode');
+const selectFpMediaCount = document.getElementById('select-fp-media-count');
+const selectFpSpeechVoices = document.getElementById('select-fp-speech-voices');
+const selectFpBatteryMode = document.getElementById('select-fp-battery-mode');
+const selectFpPermissionsMode = document.getElementById('select-fp-permissions-mode');
 
 // -------------------------------------------------------------------------
 // 1. NAVEGAÇÃO ENTRE ABAS LATERAIS
@@ -12798,6 +15418,85 @@ function setCheckedIfNotFocused(el, val) {
   }
 }
 
+async function updateFpConsistencyUI(providedConfig) {
+  if (!fpConsistencyBox || !window.settingsAPI || typeof window.settingsAPI.validateFingerprint !== 'function') return;
+
+  const config = providedConfig || {
+    fpOs: selectFpOs ? selectFpOs.value : 'windows11',
+    fpBrowser: selectFpBrowser ? selectFpBrowser.value : 'chrome',
+    fpPlatform: selectFpPlatform ? selectFpPlatform.value : 'auto',
+    fpLocale: selectFpLocale ? selectFpLocale.value : 'pt-BR',
+    fpTimezone: selectFpTimezone ? selectFpTimezone.value : 'America/Sao_Paulo',
+    fpUserAgent: inputFpUa ? inputFpUa.value : 'auto',
+    fpScreenResolution: selectFpResolution ? selectFpResolution.value : '1920x1080',
+    fpDevicePixelRatio: selectFpDpr ? selectFpDpr.value : 'auto',
+    fpHardwareConcurrency: selectFpCores ? Number(selectFpCores.value) : 8,
+    fpDeviceMemory: selectFpMemory ? Number(selectFpMemory.value) : 8,
+    fpTouchSupport: toggleFpTouch ? toggleFpTouch.checked : false,
+    fpWebglVendor: inputFpWebglVendor ? inputFpWebglVendor.value : 'auto',
+    fpWebglRenderer: inputFpWebglRenderer ? inputFpWebglRenderer.value : 'auto'
+  };
+
+  try {
+    const res = await window.settingsAPI.validateFingerprint(config);
+    if (!res) {
+      fpConsistencyBox.style.display = 'none';
+      return;
+    }
+
+    const { valid, errors, warnings } = res;
+    fpConsistencyBox.replaceChildren();
+
+    if (!valid && errors && errors.length > 0) {
+      fpConsistencyBox.style.display = 'block';
+      fpConsistencyBox.style.backgroundColor = 'rgba(239, 68, 68, 0.15)';
+      fpConsistencyBox.style.border = '1px solid rgba(239, 68, 68, 0.4)';
+      fpConsistencyBox.style.color = '#ef4444';
+
+      const title = document.createElement('div');
+      title.style.fontWeight = '600';
+      title.style.marginBottom = '6px';
+      title.textContent = '⚠️ Inconsistência de Fingerprint Detectada:';
+      fpConsistencyBox.appendChild(title);
+
+      const ul = document.createElement('ul');
+      ul.style.margin = '0';
+      ul.style.paddingLeft = '20px';
+      errors.forEach(err => {
+        const li = document.createElement('li');
+        li.textContent = err;
+        ul.appendChild(li);
+      });
+      fpConsistencyBox.appendChild(ul);
+    } else if (warnings && warnings.length > 0) {
+      fpConsistencyBox.style.display = 'block';
+      fpConsistencyBox.style.backgroundColor = 'rgba(245, 158, 11, 0.15)';
+      fpConsistencyBox.style.border = '1px solid rgba(245, 158, 11, 0.4)';
+      fpConsistencyBox.style.color = '#f59e0b';
+
+      const title = document.createElement('div');
+      title.style.fontWeight = '600';
+      title.style.marginBottom = '6px';
+      title.textContent = 'ℹ️ Aviso de Configuração Não Usual:';
+      fpConsistencyBox.appendChild(title);
+
+      const ul = document.createElement('ul');
+      ul.style.margin = '0';
+      ul.style.paddingLeft = '20px';
+      warnings.forEach(warn => {
+        const li = document.createElement('li');
+        li.textContent = warn;
+        ul.appendChild(li);
+      });
+      fpConsistencyBox.appendChild(ul);
+    } else {
+      fpConsistencyBox.style.display = 'none';
+    }
+  } catch (err) {
+    console.warn('[Settings] Falha ao validar consistência do fingerprint:', err);
+  }
+}
+
 // -------------------------------------------------------------------------
 // 5. CARREGAMENTO INICIAL DAS CONFIGURAÇÕES DO MAIN PROCESS
 // -------------------------------------------------------------------------
@@ -12830,6 +15529,7 @@ async function loadSettings() {
 
     setValIfNotFocused(inputHomeUrl, s.homePageUrl || '');
     setValIfNotFocused(selectZoom, (s.defaultZoom || 1.0).toString());
+    setCheckedIfNotFocused(chkClearOnExit, Boolean(s.clearDataOnExit));
 
     // Seção Personalização
     applyAccentColorLocal(s.accentColor || '#4d7cff');
@@ -12860,6 +15560,52 @@ async function loadSettings() {
     setValIfNotFocused(inputProxyUsername, s.proxyUsername || '');
     setValIfNotFocused(inputProxyPassword, s.hasProxyPassword ? '••••••••' : '');
     setCheckedIfNotFocused(toggleProxyApplyPrivate, Boolean(s.proxyApplyPrivate));
+
+    // Seção Privacidade Avançada (Fingerprinting Multivetorial)
+    if (toggleFpEnabled) {
+      const fpEnabled = Boolean(s.fingerprintProtectionEnabled);
+      setCheckedIfNotFocused(toggleFpEnabled, fpEnabled);
+      if (fpSuboptions) {
+        fpSuboptions.style.opacity = fpEnabled ? '1' : '0.5';
+        fpSuboptions.style.pointerEvents = fpEnabled ? 'auto' : 'none';
+      }
+    }
+
+    // Grupo A
+    setValIfNotFocused(selectFpOs, s.fpOs || 'windows11');
+    setValIfNotFocused(selectFpBrowser, s.fpBrowser || 'chrome');
+    setValIfNotFocused(selectFpPlatform, s.fpPlatform || 'auto');
+    setValIfNotFocused(selectFpLocale, s.fpLocale || 'pt-BR');
+    setValIfNotFocused(selectFpTimezone, s.fpTimezone || 'America/Sao_Paulo');
+    setValIfNotFocused(inputFpUa, s.fpUserAgent || 'auto');
+
+    // Grupo B
+    setValIfNotFocused(selectFpResolution, s.fpScreenResolution || '1920x1080');
+    setValIfNotFocused(selectFpDpr, s.fpDevicePixelRatio ? String(s.fpDevicePixelRatio) : 'auto');
+    setValIfNotFocused(selectFpCores, s.fpHardwareConcurrency ? String(s.fpHardwareConcurrency) : '8');
+    setValIfNotFocused(selectFpMemory, s.fpDeviceMemory ? String(s.fpDeviceMemory) : '8');
+    setCheckedIfNotFocused(toggleFpTouch, Boolean(s.fpTouchSupport));
+
+    // Grupo C
+    setValIfNotFocused(inputFpWebglVendor, s.fpWebglVendor || 'auto');
+    setValIfNotFocused(inputFpWebglRenderer, s.fpWebglRenderer || 'auto');
+    setValIfNotFocused(selectFpWebglMode, s.fpWebglImageMode || 'noise');
+
+    // Grupo D
+    setValIfNotFocused(selectFpCanvasMode, s.fpCanvasMode || 'noise');
+    setValIfNotFocused(selectFpAudioMode, s.fpAudioMode || 'noise');
+    setValIfNotFocused(selectFpClientRectsMode, s.fpClientRectsMode || 'noise');
+    setValIfNotFocused(selectFpFontsMode, s.fpFontsMode || 'mask');
+
+    // Grupo E
+    setValIfNotFocused(selectFpWebrtcMode, s.fpWebrtcMode || 'proxy');
+    setValIfNotFocused(selectFpMediaCount, s.fpMediaDevicesCount ? String(s.fpMediaDevicesCount) : '2');
+    setValIfNotFocused(selectFpSpeechVoices, s.fpSpeechVoices || 'mask');
+    setValIfNotFocused(selectFpBatteryMode, s.fpBatteryMode || 'mask');
+    setValIfNotFocused(selectFpPermissionsMode, s.fpPermissionsMode || 'mask');
+
+    // Atualiza status de consistência
+    updateFpConsistencyUI(s);
 
     // Carrega Permissões
     loadPermissions();
@@ -12926,6 +15672,13 @@ function initEvents() {
     selectZoom.addEventListener('change', () => {
       const factor = parseFloat(selectZoom.value) || 1.0;
       window.settingsAPI.setSetting('defaultZoom', factor);
+    });
+  }
+
+  // Limpar dados ao fechar
+  if (chkClearOnExit) {
+    chkClearOnExit.addEventListener('change', () => {
+      window.settingsAPI.setSetting('clearDataOnExit', chkClearOnExit.checked);
     });
   }
 
@@ -13096,6 +15849,199 @@ function initEvents() {
       }
     });
   }
+
+  // =========================================================================
+  // Controles de Privacidade Avançada (Fingerprinting Multivetorial)
+  // =========================================================================
+
+  // Botão "Resetar Fingerprint"
+  if (btnResetFingerprint) {
+    btnResetFingerprint.addEventListener('click', async () => {
+      const confirmReset = window.confirm(
+        'Isso vai gerar uma nova identidade de fingerprint aleatória e consistente. Todas as abas abertas serão recarregadas. Deseja continuar?'
+      );
+      if (!confirmReset) return;
+
+      try {
+        btnResetFingerprint.disabled = true;
+        btnResetFingerprint.style.opacity = '0.6';
+        const res = await window.settingsAPI.resetFingerprint();
+        if (res && res.config) {
+          await loadSettings();
+          if (fpConsistencyBox) {
+            fpConsistencyBox.replaceChildren();
+            fpConsistencyBox.style.display = 'block';
+            fpConsistencyBox.style.backgroundColor = 'rgba(16, 185, 129, 0.15)';
+            fpConsistencyBox.style.border = '1px solid rgba(16, 185, 129, 0.4)';
+            fpConsistencyBox.style.color = '#10b981';
+            fpConsistencyBox.textContent = '✓ Fingerprint resetado com sucesso! Nova identidade ativa aplicada a todas as abas web.';
+            setTimeout(() => {
+              updateFpConsistencyUI();
+            }, 4500);
+          }
+        }
+      } catch (err) {
+        console.error('[Settings] Erro ao resetar fingerprint:', err);
+      } finally {
+        btnResetFingerprint.disabled = false;
+        btnResetFingerprint.style.opacity = '1';
+      }
+    });
+  }
+
+  // Toggle Mestre de Fingerprinting
+  if (toggleFpEnabled) {
+    toggleFpEnabled.addEventListener('change', () => {
+      const enabled = toggleFpEnabled.checked;
+      if (fpSuboptions) {
+        fpSuboptions.style.opacity = enabled ? '1' : '0.5';
+        fpSuboptions.style.pointerEvents = enabled ? 'auto' : 'none';
+      }
+      window.settingsAPI.setSetting('fingerprintProtectionEnabled', enabled);
+    });
+  }
+
+  // GRUPO A: IDENTIDADE DO SISTEMA
+  if (selectFpOs) {
+    selectFpOs.addEventListener('change', () => {
+      window.settingsAPI.setSetting('fpOs', selectFpOs.value);
+      updateFpConsistencyUI();
+    });
+  }
+  if (selectFpBrowser) {
+    selectFpBrowser.addEventListener('change', () => {
+      window.settingsAPI.setSetting('fpBrowser', selectFpBrowser.value);
+      updateFpConsistencyUI();
+    });
+  }
+  if (selectFpPlatform) {
+    selectFpPlatform.addEventListener('change', () => {
+      window.settingsAPI.setSetting('fpPlatform', selectFpPlatform.value);
+      updateFpConsistencyUI();
+    });
+  }
+  if (selectFpLocale) {
+    selectFpLocale.addEventListener('change', () => {
+      window.settingsAPI.setSetting('fpLocale', selectFpLocale.value);
+      updateFpConsistencyUI();
+    });
+  }
+  if (selectFpTimezone) {
+    selectFpTimezone.addEventListener('change', () => {
+      window.settingsAPI.setSetting('fpTimezone', selectFpTimezone.value);
+      updateFpConsistencyUI();
+    });
+  }
+  if (inputFpUa) {
+    inputFpUa.addEventListener('input', () => {
+      const val = inputFpUa.value.trim();
+      debouncedSet('fpUserAgent', val || 'auto');
+      updateFpConsistencyUI();
+    });
+  }
+
+  // GRUPO B: HARDWARE
+  if (selectFpResolution) {
+    selectFpResolution.addEventListener('change', () => {
+      window.settingsAPI.setSetting('fpScreenResolution', selectFpResolution.value);
+      updateFpConsistencyUI();
+    });
+  }
+  if (selectFpDpr) {
+    selectFpDpr.addEventListener('change', () => {
+      const val = selectFpDpr.value === 'auto' ? 'auto' : Number(selectFpDpr.value);
+      window.settingsAPI.setSetting('fpDevicePixelRatio', val);
+      updateFpConsistencyUI();
+    });
+  }
+  if (selectFpCores) {
+    selectFpCores.addEventListener('change', () => {
+      window.settingsAPI.setSetting('fpHardwareConcurrency', Number(selectFpCores.value));
+      updateFpConsistencyUI();
+    });
+  }
+  if (selectFpMemory) {
+    selectFpMemory.addEventListener('change', () => {
+      window.settingsAPI.setSetting('fpDeviceMemory', Number(selectFpMemory.value));
+      updateFpConsistencyUI();
+    });
+  }
+  if (toggleFpTouch) {
+    toggleFpTouch.addEventListener('change', () => {
+      window.settingsAPI.setSetting('fpTouchSupport', toggleFpTouch.checked);
+      updateFpConsistencyUI();
+    });
+  }
+
+  // GRUPO C: GPU / WEBGL
+  if (inputFpWebglVendor) {
+    inputFpWebglVendor.addEventListener('input', () => {
+      const val = inputFpWebglVendor.value.trim();
+      debouncedSet('fpWebglVendor', val || 'auto');
+      updateFpConsistencyUI();
+    });
+  }
+  if (inputFpWebglRenderer) {
+    inputFpWebglRenderer.addEventListener('input', () => {
+      const val = inputFpWebglRenderer.value.trim();
+      debouncedSet('fpWebglRenderer', val || 'auto');
+      updateFpConsistencyUI();
+    });
+  }
+  if (selectFpWebglMode) {
+    selectFpWebglMode.addEventListener('change', () => {
+      window.settingsAPI.setSetting('fpWebglImageMode', selectFpWebglMode.value);
+    });
+  }
+
+  // GRUPO D: CANVAS, ÁUDIO, CLIENTRECTS & FONTES
+  if (selectFpCanvasMode) {
+    selectFpCanvasMode.addEventListener('change', () => {
+      window.settingsAPI.setSetting('fpCanvasMode', selectFpCanvasMode.value);
+    });
+  }
+  if (selectFpAudioMode) {
+    selectFpAudioMode.addEventListener('change', () => {
+      window.settingsAPI.setSetting('fpAudioMode', selectFpAudioMode.value);
+    });
+  }
+  if (selectFpClientRectsMode) {
+    selectFpClientRectsMode.addEventListener('change', () => {
+      window.settingsAPI.setSetting('fpClientRectsMode', selectFpClientRectsMode.value);
+    });
+  }
+  if (selectFpFontsMode) {
+    selectFpFontsMode.addEventListener('change', () => {
+      window.settingsAPI.setSetting('fpFontsMode', selectFpFontsMode.value);
+    });
+  }
+
+  // GRUPO E: OUTROS VETORES
+  if (selectFpWebrtcMode) {
+    selectFpWebrtcMode.addEventListener('change', () => {
+      window.settingsAPI.setSetting('fpWebrtcMode', selectFpWebrtcMode.value);
+    });
+  }
+  if (selectFpMediaCount) {
+    selectFpMediaCount.addEventListener('change', () => {
+      window.settingsAPI.setSetting('fpMediaDevicesCount', Number(selectFpMediaCount.value));
+    });
+  }
+  if (selectFpSpeechVoices) {
+    selectFpSpeechVoices.addEventListener('change', () => {
+      window.settingsAPI.setSetting('fpSpeechVoices', selectFpSpeechVoices.value);
+    });
+  }
+  if (selectFpBatteryMode) {
+    selectFpBatteryMode.addEventListener('change', () => {
+      window.settingsAPI.setSetting('fpBatteryMode', selectFpBatteryMode.value);
+    });
+  }
+  if (selectFpPermissionsMode) {
+    selectFpPermissionsMode.addEventListener('change', () => {
+      window.settingsAPI.setSetting('fpPermissionsMode', selectFpPermissionsMode.value);
+    });
+  }
 }
 
 // Inicialização
@@ -13113,7 +16059,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 ---
 
-### 3.42 `pages/newtab.html`
+### 4.47 `pages/newtab.html`
 
 ```html
 <!DOCTYPE html>
@@ -13127,6 +16073,8 @@ document.addEventListener('DOMContentLoaded', () => {
     :root {
       --color-accent: #4d7cff;
       --color-accent-hover: #3b6ae6;
+      --fire-mid: #29B6FF;
+      --fire-main: #0194FF;
       --color-bg-base: #18181d;
       --color-text-main: #f0f0f5;
       --color-text-sub: #9e9ea8;
@@ -13223,23 +16171,44 @@ document.addEventListener('DOMContentLoaded', () => {
     .logo-icon {
       width: 58px;
       height: 58px;
-      border-radius: 16px;
-      background: linear-gradient(135deg, var(--color-accent) 0%, #0194FF 100%);
+      background: transparent;
       display: flex;
       align-items: center;
       justify-content: center;
-      box-shadow: 0 8px 24px rgba(1, 148, 255, 0.3);
-      transition: transform 0.2s ease, background 0.3s ease;
+      filter: drop-shadow(0 0 8px var(--fire-mid)) drop-shadow(0 0 16px var(--fire-main));
+      animation: logo-glow-pulse 2.8s ease-in-out infinite;
+      transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), filter 0.25s ease;
+      cursor: default;
     }
 
     .logo-icon:hover {
-      transform: scale(1.05);
+      transform: scale(1.08);
+      filter: drop-shadow(0 0 12px var(--fire-mid)) drop-shadow(0 0 24px var(--color-accent));
+      animation-play-state: paused;
+    }
+
+    .logo-icon img {
+      width: 48px;
+      height: 48px;
+      object-fit: contain;
+      display: block;
+      user-select: none;
+      -webkit-user-drag: none;
     }
 
     .logo-icon svg {
       width: 34px;
       height: 34px;
       fill: #ffffff;
+    }
+
+    @keyframes logo-glow-pulse {
+      0%, 100% {
+        filter: drop-shadow(0 0 7px var(--fire-mid)) drop-shadow(0 0 14px var(--fire-main));
+      }
+      50% {
+        filter: drop-shadow(0 0 12px var(--fire-mid)) drop-shadow(0 0 22px var(--color-accent));
+      }
     }
 
     h1 {
@@ -13351,7 +16320,7 @@ document.addEventListener('DOMContentLoaded', () => {
   <div class="container">
     <div class="logo-area">
       <div class="logo-icon">
-        <img src="../assets/icons/favicon-circle.png" alt="Dragon" style="width: 44px; height: 44px; object-fit: contain;">
+        <img src="../assets/icons/favicon-circle.png" alt="Dragon">
       </div>
       <h1>Dragon</h1>
       <p id="subtitle-text" class="subtitle">Navegação rápida, privada e segura</p>
@@ -13403,7 +16372,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 ---
 
-### 3.43 `pages/newtab.js`
+### 4.48 `pages/newtab.js`
 
 ```javascript
 // =============================================================================
@@ -13530,7 +16499,11 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       // 3. Caso contrário: termo de pesquisa usando o buscador configurado
-      const targetUrl = currentSearchTemplate.replace('%s', encodeURIComponent(val));
+      const targetUrl = currentSearchTemplate.includes('%s')
+        ? currentSearchTemplate.replace('%s', encodeURIComponent(val))
+        : (currentSearchTemplate.includes('%25s')
+            ? currentSearchTemplate.replace('%25s', encodeURIComponent(val))
+            : `${currentSearchTemplate}${currentSearchTemplate.includes('?') ? '&q=' : '?q='}${encodeURIComponent(val)}`);
       window.location.href = targetUrl;
     });
   }
@@ -13539,7 +16512,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 ---
 
-### 3.44 `pages/history.html`
+### 4.49 `pages/history.html`
 
 ```html
 <!DOCTYPE html>
@@ -13589,7 +16562,13 @@ document.addEventListener('DOMContentLoaded', () => {
     .header-logo {
       width: 32px;
       height: 32px;
-      border-radius: 8px;
+      filter: drop-shadow(0 0 5px rgba(41, 182, 255, 0.45));
+      transition: filter 0.25s ease, transform 0.25s ease;
+    }
+
+    .header-logo:hover {
+      transform: scale(1.08);
+      filter: drop-shadow(0 0 8px rgba(41, 182, 255, 0.75));
     }
 
     .header-title {
@@ -13795,7 +16774,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 ---
 
-### 3.45 `pages/history.js`
+### 4.50 `pages/history.js`
 
 ```javascript
 // =============================================================================
@@ -13925,7 +16904,7 @@ loadHistory();
 
 ---
 
-### 3.46 `pages/bookmarks.html`
+### 4.51 `pages/bookmarks.html`
 
 ```html
 <!DOCTYPE html>
@@ -13975,7 +16954,13 @@ loadHistory();
     .header-logo {
       width: 32px;
       height: 32px;
-      border-radius: 8px;
+      filter: drop-shadow(0 0 5px rgba(41, 182, 255, 0.45));
+      transition: filter 0.25s ease, transform 0.25s ease;
+    }
+
+    .header-logo:hover {
+      transform: scale(1.08);
+      filter: drop-shadow(0 0 8px rgba(41, 182, 255, 0.75));
     }
 
     .header-title {
@@ -14181,7 +17166,7 @@ loadHistory();
 
 ---
 
-### 3.47 `pages/bookmarks.js`
+### 4.52 `pages/bookmarks.js`
 
 ```javascript
 // =============================================================================
@@ -14306,7 +17291,7 @@ loadBookmarks();
 
 ---
 
-### 3.48 `pages/downloads.html`
+### 4.53 `pages/downloads.html`
 
 ```html
 <!DOCTYPE html>
@@ -14355,7 +17340,13 @@ loadBookmarks();
     .header-logo {
       width: 32px;
       height: 32px;
-      border-radius: 8px;
+      filter: drop-shadow(0 0 5px rgba(41, 182, 255, 0.45));
+      transition: filter 0.25s ease, transform 0.25s ease;
+    }
+
+    .header-logo:hover {
+      transform: scale(1.08);
+      filter: drop-shadow(0 0 8px rgba(41, 182, 255, 0.75));
     }
 
     .header-title {
@@ -14536,7 +17527,7 @@ loadBookmarks();
 
 ---
 
-### 3.49 `pages/downloads.js`
+### 4.54 `pages/downloads.js`
 
 ```javascript
 // =============================================================================
@@ -14713,7 +17704,7 @@ loadDownloads();
 
 ---
 
-### 3.50 `pages/error.html`
+### 4.55 `pages/error.html`
 
 ```html
 <!DOCTYPE html>
@@ -14891,7 +17882,7 @@ loadDownloads();
 
 ---
 
-### 3.51 `pages/error.js`
+### 4.56 `pages/error.js`
 
 ```javascript
 // =============================================================================
@@ -14935,7 +17926,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 ---
 
-### 3.52 `pages/https-warning.html`
+### 4.57 `pages/https-warning.html`
 
 ```html
 <!DOCTYPE html>
@@ -15089,7 +18080,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 ---
 
-### 3.53 `pages/https-warning.js`
+### 4.58 `pages/https-warning.js`
 
 ```javascript
 // =============================================================================
@@ -15159,7 +18150,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 ---
 
-### 3.54 `pages/cert-error.html`
+### 4.59 `pages/cert-error.html`
 
 ```html
 <!DOCTYPE html>
@@ -15399,7 +18390,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 ---
 
-### 3.55 `pages/cert-error.js`
+### 4.60 `pages/cert-error.js`
 
 ```javascript
 // =============================================================================
@@ -15488,7 +18479,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 ---
 
-### 3.56 `test/clear-data.test.js`
+### 4.61 `test/clear-data.test.js`
 
 ```javascript
 const test = require('node:test');
@@ -15723,7 +18714,288 @@ test('clearAllData: registra falhas no summary.errors e define success:false cas
 
 ---
 
-### 3.57 `test/history.test.js`
+### 4.62 `test/downloads.test.js`
+
+```javascript
+const test = require('node:test');
+const assert = require('node:assert');
+const { isRiskyDownload, RISKY_EXTENSIONS } = require('../src/main/pure/download-utils');
+
+test('isRiskyDownload: identifica corretamente extensões potencialmente perigosas', () => {
+  // Extensões de risco executáveis e scripts
+  assert.strictEqual(isRiskyDownload('setup.exe'), true);
+  assert.strictEqual(isRiskyDownload('INSTALL.EXE'), true);
+  assert.strictEqual(isRiskyDownload('script.bat'), true);
+  assert.strictEqual(isRiskyDownload('command.cmd'), true);
+  assert.strictEqual(isRiskyDownload('screensaver.scr'), true);
+  assert.strictEqual(isRiskyDownload('installer.msi'), true);
+  assert.strictEqual(isRiskyDownload('payload.vbs'), true);
+  assert.strictEqual(isRiskyDownload('automation.ps1'), true);
+  assert.strictEqual(isRiskyDownload('minecraft.jar'), true);
+  assert.strictEqual(isRiskyDownload('oldprog.com'), true);
+  assert.strictEqual(isRiskyDownload('shortcut.pif'), true);
+  assert.strictEqual(isRiskyDownload('tweak.reg'), true);
+  assert.strictEqual(isRiskyDownload('app.hta'), true);
+});
+
+test('isRiskyDownload: não bloqueia nem afeta extensões seguras e comuns', () => {
+  // Extensões seguras comuns do cotidiano
+  assert.strictEqual(isRiskyDownload('documento.pdf'), false);
+  assert.strictEqual(isRiskyDownload('relatorio.docx'), false);
+  assert.strictEqual(isRiskyDownload('planilha.xlsx'), false);
+  assert.strictEqual(isRiskyDownload('arquivo.zip'), false);
+  assert.strictEqual(isRiskyDownload('foto.png'), false);
+  assert.strictEqual(isRiskyDownload('imagem.jpeg'), false);
+  assert.strictEqual(isRiskyDownload('video.mp4'), false);
+  assert.strictEqual(isRiskyDownload('musica.mp3'), false);
+  assert.strictEqual(isRiskyDownload('codigo.txt'), false);
+  assert.strictEqual(isRiskyDownload('pacote.tar.gz'), false);
+
+  // Casos nulos ou vazios
+  assert.strictEqual(isRiskyDownload(''), false);
+  assert.strictEqual(isRiskyDownload(null), false);
+  assert.strictEqual(isRiskyDownload(undefined), false);
+});
+```
+
+---
+
+### 4.63 `test/fingerprint.test.js`
+
+```javascript
+const test = require('node:test');
+const assert = require('node:assert');
+const {
+  applyDeterministicCanvasNoise,
+  applyCanvasNoise,
+  applyAudioNoise,
+  applyClientRectsNoise,
+  normalizeUserAgentString,
+  deriveUserAgent,
+  derivePlatform,
+  deriveDevicePixelRatio,
+  deriveWebglRenderer,
+  validateFingerprintConsistency,
+  buildFingerprintSeed,
+  pickRandomConsistentPreset,
+  pickRandomConsistentPresetWithSeed,
+  getFingerprintOptions
+} = require('../src/main/pure/fingerprint-utils');
+
+test('applyDeterministicCanvasNoise: mesma semente produz rigorosamente o mesmo resultado', () => {
+  const seed = 987654321;
+  const original = new Uint8ClampedArray([
+    120, 150, 200, 255,  // pixel 0
+    120, 150, 200, 255,  // pixel 1
+    120, 150, 200, 255,  // pixel 2
+    120, 150, 200, 255,  // pixel 3
+    120, 150, 200, 255,  // pixel 4
+    120, 150, 200, 255,  // pixel 5
+    120, 150, 200, 255,  // pixel 6
+    120, 150, 200, 255   // pixel 7
+  ]);
+
+  const run1 = applyDeterministicCanvasNoise(new Uint8ClampedArray(original), seed);
+  const run2 = applyDeterministicCanvasNoise(new Uint8ClampedArray(original), seed);
+
+  assert.deepStrictEqual(Array.from(run1), Array.from(run2));
+});
+
+test('applyDeterministicCanvasNoise: sementes diferentes produzem distorções distintas', () => {
+  const original = new Uint8ClampedArray([
+    120, 150, 200, 255,
+    120, 150, 200, 255,
+    120, 150, 200, 255,
+    120, 150, 200, 255,
+    120, 150, 200, 255,
+    120, 150, 200, 255,
+    120, 150, 200, 255,
+    120, 150, 200, 255
+  ]);
+
+  const runSeedA = applyDeterministicCanvasNoise(new Uint8ClampedArray(original), 11111);
+  const runSeedB = applyDeterministicCanvasNoise(new Uint8ClampedArray(original), 99999);
+
+  assert.notDeepStrictEqual(Array.from(runSeedA), Array.from(runSeedB));
+});
+
+test('applyDeterministicCanvasNoise: distorção é sutil (máximo +-1) e preserva transparência', () => {
+  const seed = 55555;
+  const original = new Uint8ClampedArray([
+    100, 100, 100, 255,  // opaco
+    0,   0,   0,   0,    // transparente
+    50,  50,  50,  255,
+    0,   0,   0,   0,
+    200, 200, 200, 255
+  ]);
+
+  const noisy = applyDeterministicCanvasNoise(new Uint8ClampedArray(original), seed);
+
+  // Pixels transparentes devem ser preservados
+  assert.strictEqual(noisy[7], 0);
+
+  // Delta de distorção não pode ultrapassar 1
+  for (let i = 0; i < original.length; i++) {
+    const diff = Math.abs(noisy[i] - original[i]);
+    assert.ok(diff <= 1, `Diferença no índice ${i} excedeu 1: ${diff}`);
+  }
+});
+
+test('applyAudioNoise: ruído de áudio é determinístico e imperceptível', () => {
+  const seed = 444333;
+  const original = new Float32Array([0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]);
+
+  const run1 = applyAudioNoise(new Float32Array(original), seed);
+  const run2 = applyAudioNoise(new Float32Array(original), seed);
+
+  assert.deepStrictEqual(Array.from(run1), Array.from(run2));
+
+  // Variação é minúscula
+  for (let i = 0; i < original.length; i++) {
+    const diff = Math.abs(run1[i] - original[i]);
+    assert.ok(diff <= 0.0001, `Variação de áudio excedeu tolerância: ${diff}`);
+  }
+});
+
+test('applyClientRectsNoise: ruído de geometria é determinístico e restrito', () => {
+  const seed = 777666;
+  const rect = { x: 100, y: 150, width: 200, height: 80, top: 150, bottom: 230, left: 100, right: 300 };
+
+  const noisy1 = applyClientRectsNoise(rect, seed);
+  const noisy2 = applyClientRectsNoise(rect, seed);
+
+  assert.deepStrictEqual(noisy1, noisy2);
+  assert.ok(Math.abs(noisy1.width - rect.width) <= 0.2);
+});
+
+test('normalizeUserAgentString: remove Electron e normaliza versão estável do Chrome', () => {
+  const rawUA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Dragon/1.0.0 Chrome/130.0.6723.117 Electron/33.2.0 Safari/537.36';
+  const normalized = normalizeUserAgentString(rawUA);
+
+  assert.strictEqual(normalized.includes('Electron'), false);
+  assert.strictEqual(normalized.includes('Dragon'), false);
+  assert.strictEqual(normalized.includes('Chrome/130.0.0.0'), true);
+});
+
+test('deriveUserAgent: deriva strings coerentes para SO e Navegador', () => {
+  const winChrome = deriveUserAgent('windows11', 'chrome');
+  assert.ok(winChrome.includes('Windows NT 10.0'));
+  assert.ok(winChrome.includes('Chrome/130'));
+
+  const macFirefox = deriveUserAgent('macos', 'firefox');
+  assert.ok(macFirefox.includes('Macintosh; Intel Mac OS X 10_15_7'));
+  assert.ok(macFirefox.includes('Firefox/132'));
+
+  const winEdge = deriveUserAgent('windows10', 'edge');
+  assert.ok(winEdge.includes('Edg/130'));
+});
+
+test('derivePlatform e deriveDevicePixelRatio: valores corretos', () => {
+  assert.strictEqual(derivePlatform('windows11'), 'Win32');
+  assert.strictEqual(derivePlatform('macos'), 'MacIntel');
+  assert.strictEqual(derivePlatform('linux'), 'Linux x86_64');
+
+  assert.strictEqual(deriveDevicePixelRatio('1920x1080'), 1);
+  assert.strictEqual(deriveDevicePixelRatio('2880x1800'), 2);
+  assert.strictEqual(deriveDevicePixelRatio('3840x2160'), 1.5);
+});
+
+test('deriveWebglRenderer: nunca retorna NVIDIA em macOS', () => {
+  const macGpu = deriveWebglRenderer('macos');
+  assert.ok(!macGpu.vendor.toLowerCase().includes('nvidia'));
+  assert.ok(!macGpu.renderer.toLowerCase().includes('nvidia'));
+});
+
+test('validateFingerprintConsistency: bloqueia macOS com NVIDIA com erro estrito', () => {
+  const invalidConfig = {
+    fpOs: 'macos',
+    fpBrowser: 'chrome',
+    fpWebglVendor: 'NVIDIA Corporation',
+    fpWebglRenderer: 'NVIDIA GeForce RTX 3060'
+  };
+
+  const result = validateFingerprintConsistency(invalidConfig);
+  assert.strictEqual(result.valid, false);
+  assert.ok(result.errors.length >= 1);
+  assert.ok(result.errors.some(e => e.includes('macOS')));
+});
+
+test('validateFingerprintConsistency: detecta avisos para combinações improváveis', () => {
+  const weirdConfig = {
+    fpOs: 'windows11',
+    fpBrowser: 'firefox',
+    fpUserAgent: 'Mozilla/5.0 (Windows NT 10.0) AppleWebKit/537.36 Chrome/130.0.0.0', // Sem Firefox/
+    fpScreenResolution: '2880x1800', // Tela Apple em Windows
+    fpHardwareConcurrency: 2,
+    fpDeviceMemory: 32, // 32GB RAM com 2 núcleos
+    fpLocale: 'pt-BR',
+    fpTimezone: 'Asia/Tokyo' // Idioma pt-BR com Tóquio
+  };
+
+  const result = validateFingerprintConsistency(weirdConfig);
+  assert.strictEqual(result.valid, true); // Válido estruturalmente, mas com avisos
+  assert.ok(result.warnings.length >= 4);
+});
+
+test('buildFingerprintSeed: gera semente de 32 bits determinística', () => {
+  const cfg1 = { fpFingerprintSeed: 12345, fpOs: 'windows11', fpScreenResolution: '1920x1080' };
+  const cfg2 = { fpFingerprintSeed: 12345, fpOs: 'windows11', fpScreenResolution: '1920x1080' };
+  const cfg3 = { fpFingerprintSeed: 99999, fpOs: 'windows11', fpScreenResolution: '1920x1080' };
+
+  const seed1 = buildFingerprintSeed(cfg1);
+  const seed2 = buildFingerprintSeed(cfg2);
+  const seed3 = buildFingerprintSeed(cfg3);
+
+  assert.strictEqual(seed1, seed2);
+  assert.notStrictEqual(seed1, seed3);
+  assert.ok(seed1 > 0);
+});
+
+test('pickRandomConsistentPresetWithSeed: determinismo absoluto e consistência 100%', () => {
+  const seed = 42891234;
+  const p1 = pickRandomConsistentPresetWithSeed(seed);
+  const p2 = pickRandomConsistentPresetWithSeed(seed);
+
+  assert.deepStrictEqual(p1, p2);
+
+  const check = validateFingerprintConsistency(p1.config);
+  assert.strictEqual(check.valid, true);
+  assert.strictEqual(check.errors.length, 0);
+
+  if (p1.config.fpOs === 'macos') {
+    assert.ok(!p1.config.fpWebglVendor.toLowerCase().includes('nvidia'));
+    assert.ok(!p1.config.fpWebglRenderer.toLowerCase().includes('nvidia'));
+  }
+});
+
+test('pickRandomConsistentPreset: sorteia preset 100% consistente sem erros', () => {
+  for (let i = 0; i < 20; i++) {
+    const { config, seed } = pickRandomConsistentPreset();
+    assert.ok(seed > 0);
+    const check = validateFingerprintConsistency(config);
+    assert.strictEqual(check.valid, true, `Preset sorteado na iteração ${i} falhou na validação`);
+    assert.strictEqual(check.errors.length, 0);
+
+    if (config.fpOs === 'macos') {
+      assert.ok(!config.fpWebglVendor.toLowerCase().includes('nvidia'));
+    }
+  }
+});
+
+test('getFingerprintOptions: retorna listas completas para a UI', () => {
+  const opts = getFingerprintOptions();
+  assert.ok(Array.isArray(opts.osList) && opts.osList.length > 0);
+  assert.ok(Array.isArray(opts.browserList) && opts.browserList.length > 0);
+  assert.ok(Array.isArray(opts.screenList) && opts.screenList.length > 0);
+  assert.ok(Array.isArray(opts.timezoneList) && opts.timezoneList.length > 0);
+  assert.ok(Array.isArray(opts.localeList) && opts.localeList.length > 0);
+  assert.ok(opts.gpuPresets && opts.gpuPresets.windows && opts.gpuPresets.macos);
+});
+```
+
+---
+
+### 4.64 `test/history.test.js`
 
 ```javascript
 const test = require('node:test');
@@ -15810,7 +19082,7 @@ test('history: flushHistorySync grava imediatamente em disco', () => {
 
 ---
 
-### 3.58 `test/navigation.test.js`
+### 4.65 `test/navigation.test.js`
 
 ```javascript
 const test = require('node:test');
@@ -15853,11 +19125,26 @@ test('normalizeInput: palavras soltas ou com espaços viram busca', () => {
   assert.strictEqual(normalizeInput('dragao azul', customOpts), 'https://duckduckgo.com/?q=dragao%20azul');
   assert.strictEqual(normalizeInput('receitas', customOpts), 'https://duckduckgo.com/?q=receitas');
 });
+
+test('applySearchTemplate: substitui %s ou %25s corretamente e codifica queries', () => {
+  const { applySearchTemplate } = require('../src/main/pure/navigation-utils');
+  assert.strictEqual(applySearchTemplate('https://duckduckgo.com/?q=%s', 'gato preto'), 'https://duckduckgo.com/?q=gato%20preto');
+  assert.strictEqual(applySearchTemplate('https://duckduckgo.com/?q=%25s', 'gato preto'), 'https://duckduckgo.com/?q=gato%20preto');
+  assert.strictEqual(applySearchTemplate('https://www.google.com/search?q=%s', 'dragon browser'), 'https://www.google.com/search?q=dragon%20browser');
+});
+
+test('navigation (módulo principal): normalizeInput gera URL de pesquisa correta sem %25s', () => {
+  const mainNav = require('../src/main/navigation');
+  const result = mainNav.normalizeInput('gatos e cachorros');
+  assert.strictEqual(result, 'https://duckduckgo.com/?q=gatos%20e%20cachorros');
+  assert.ok(!result.includes('%25s'));
+  assert.ok(result.includes('gatos%20e%20cachorros'));
+});
 ```
 
 ---
 
-### 3.59 `test/permissions.test.js`
+### 4.66 `test/permissions.test.js`
 
 ```javascript
 const test = require('node:test');
@@ -15943,7 +19230,7 @@ test('Fila de permissões: lógica pura de enfileiramento e resolução sequenci
 
 ---
 
-### 3.60 `test/privacy.test.js`
+### 4.67 `test/privacy.test.js`
 
 ```javascript
 const test = require('node:test');
@@ -15953,7 +19240,9 @@ const {
   isLocalHost,
   isTrackerDomain,
   cleanTrackingParameters,
-  isValidBlocklistHost
+  isValidBlocklistHost,
+  isSuspiciousRedirectChain,
+  calculatePrivacyGrade
 } = require('../src/main/pure/privacy-utils');
 
 
@@ -16016,11 +19305,58 @@ test('isValidBlocklistHost: valida apenas linhas sintaticamente corretas de dom�
   assert.strictEqual(isValidBlocklistHost('site com espaco.com'), false);
   assert.strictEqual(isValidBlocklistHost('.inicia-com-ponto.com'), false);
 });
+
+test('calculatePrivacyGrade: calcula notas A, C e F com base nas métricas de privacidade', () => {
+  // Caso Nota A: Conexão HTTPS segura, 0 a 3 rastreadores, 0 popups
+  assert.strictEqual(calculatePrivacyGrade({ isHttps: true, count: 0, popupsBlocked: 0 }), 'A');
+  assert.strictEqual(calculatePrivacyGrade({ isHttps: true, count: 2, popupsBlocked: 0 }), 'A');
+
+  // Caso Nota B: Conexão HTTPS com poucos rastreadores
+  assert.strictEqual(calculatePrivacyGrade({ isHttps: true, count: 4, popupsBlocked: 0 }), 'B');
+
+  // Caso Nota C: Conexão HTTPS com volume moderado de rastreadores (10 rastreadores = -40 -> 60 pts)
+  assert.strictEqual(calculatePrivacyGrade({ isHttps: true, count: 10, popupsBlocked: 0 }), 'C');
+  // Ou HTTPS com 4 rastreadores (-25) e 1 popup bloqueado (-15) -> 60 pts -> Nota C
+  assert.strictEqual(calculatePrivacyGrade({ isHttps: true, count: 4, popupsBlocked: 1 }), 'C');
+
+  // Caso Nota D: Conexão HTTP insegura sem rastreadores (-45 -> 55 pts)
+  assert.strictEqual(calculatePrivacyGrade({ isHttps: false, count: 0, popupsBlocked: 0 }), 'D');
+
+  // Caso Nota F: Conexão HTTP insegura com rastreadores ou pop-ups abusivos
+  // HTTP (-45) + 10 rastreadores (-40) = 15 pts -> Nota F
+  assert.strictEqual(calculatePrivacyGrade({ isHttps: false, count: 10, popupsBlocked: 0 }), 'F');
+  // HTTP (-45) + 4 rastreadores (-25) + 2 popups (-30) = 0 pts -> Nota F
+  assert.strictEqual(calculatePrivacyGrade({ isHttps: false, count: 4, popupsBlocked: 2 }), 'F');
+  // HTTPS com volume massivo de rastreadores + múltiplos popups forçados (-40 -30 = 30 pts) -> Nota F
+  assert.strictEqual(calculatePrivacyGrade({ isHttps: true, count: 15, popupsBlocked: 2 }), 'F');
+});
+
+test('isSuspiciousRedirectChain: detecta sequências rápidas de redirecionamento entre domínios diferentes', () => {
+  const now = 10000;
+  const history = [
+    { url: 'https://origem.com', domain: 'origem.com', timestamp: now - 1000 },
+    { url: 'https://tracker.net/go', domain: 'tracker.net', timestamp: now - 400 }
+  ];
+
+  // Redirecionamento para o 3º domínio diferente em menos de 1.5s -> Detecta como suspeito
+  assert.strictEqual(isSuspiciousRedirectChain(history, 'https://shadyad.org/landing', now, 1500, 2), true);
+
+  // Redirecionamento interno dentro do mesmo domínio -> Não bloqueia
+  assert.strictEqual(isSuspiciousRedirectChain(history, 'https://tracker.net/login', now, 1500, 2), false);
+
+  // Redirecionamento fora da janela de 1.5s -> Não bloqueia
+  const oldHistory = [
+    { url: 'https://origem.com', domain: 'origem.com', timestamp: now - 3000 },
+    { url: 'https://tracker.net/go', domain: 'tracker.net', timestamp: now - 2000 }
+  ];
+  assert.strictEqual(isSuspiciousRedirectChain(oldHistory, 'https://shadyad.org/landing', now, 1500, 2), false);
+});
+
 ```
 
 ---
 
-### 3.61 `test/settings.test.js`
+### 4.68 `test/settings.test.js`
 
 ```javascript
 const test = require('node:test');
@@ -16052,6 +19388,43 @@ test('isValidSetting: valida tipos, limites e enums', () => {
   assert.strictEqual(isValidSetting('proxyMode', 'manual'), true);
   assert.strictEqual(isValidSetting('proxyMode', 'socks'), false);
 
+  assert.strictEqual(isValidSetting('showShortcuts', true), true);
+  assert.strictEqual(isValidSetting('clearDataOnExit', true), true);
+  assert.strictEqual(isValidSetting('clearDataOnExit', 'true'), false);
+  assert.strictEqual(isValidSetting('fingerprintProtectionEnabled', true), true);
+  assert.strictEqual(isValidSetting('fingerprintProtectionEnabled', 'yes'), false);
+  assert.strictEqual(isValidSetting('fingerprintSpoofTimezone', false), true);
+  assert.strictEqual(isValidSetting('fingerprintCanvasNoise', true), true);
+
+  // Novos vetores de fingerprint
+  assert.strictEqual(isValidSetting('fpOs', 'windows11'), true);
+  assert.strictEqual(isValidSetting('fpOs', 'macos'), true);
+  assert.strictEqual(isValidSetting('fpOs', 'android'), false);
+
+  assert.strictEqual(isValidSetting('fpBrowser', 'chrome'), true);
+  assert.strictEqual(isValidSetting('fpBrowser', 'safari'), false);
+
+  assert.strictEqual(isValidSetting('fpScreenResolution', '1920x1080'), true);
+  assert.strictEqual(isValidSetting('fpScreenResolution', '800x600'), false);
+
+  assert.strictEqual(isValidSetting('fpHardwareConcurrency', 8), true);
+  assert.strictEqual(isValidSetting('fpHardwareConcurrency', 3), false);
+
+  assert.strictEqual(isValidSetting('fpDeviceMemory', 16), true);
+  assert.strictEqual(isValidSetting('fpDeviceMemory', 10), false);
+
+  assert.strictEqual(isValidSetting('fpCanvasMode', 'noise'), true);
+  assert.strictEqual(isValidSetting('fpCanvasMode', 'mask'), true);
+  assert.strictEqual(isValidSetting('fpCanvasMode', 'fake'), false);
+
+  assert.strictEqual(isValidSetting('fpWebrtcMode', 'proxy'), true);
+  assert.strictEqual(isValidSetting('fpWebrtcMode', 'disabled'), true);
+  assert.strictEqual(isValidSetting('fpWebrtcMode', 'blocked'), false);
+
+  assert.strictEqual(isValidSetting('fpFingerprintSeed', 123456789), true);
+  assert.strictEqual(isValidSetting('fpFingerprintSeed', null), true);
+  assert.strictEqual(isValidSetting('fpFingerprintSeed', -10), false);
+
   assert.strictEqual(isValidSetting('chaveInexistente', 123), false);
 });
 
@@ -16074,7 +19447,7 @@ test('mergeWithDefaults: mescla chaves válidas e descarta corrompidas', () => {
 
 ---
 
-### 3.62 `test/tabs.test.js`
+### 4.69 `test/tabs.test.js`
 
 ```javascript
 const test = require('node:test');
@@ -16114,15 +19487,22 @@ test('reorderTabs: reordena corretamente elementos em array de abas', () => {
 
 ---
 
-### 3.63 `assets/blocklists/trackers.txt`
+### 4.70 `assets/blocklists/trackers.txt`
 
 ```text
-# =============================================================================\n# assets/blocklists/trackers.txt\n# Lista de bloqueio de rastreadores integrada do Dragon\n# Origem: Peter Lowe's Ad and tracking server list\n# Total de dominios ativos cadastrados: 0 dominios\n# =============================================================================\n# (Conteudo truncado no relatorio de auditoria conforme instrucao)\n# [0 dominios incluidos e ativos no arquivo real]
+# =============================================================================
+# assets/blocklists/trackers.txt
+# Lista de bloqueio de rastreadores integrada do Dragon
+# Origem: Peter Lowe's Ad and tracking server list
+# Total de dominios ativos cadastrados: 3569 dominios
+# =============================================================================
+# (Conteudo truncado no relatorio de auditoria conforme instrucao)
+# [3569 dominios incluidos e ativos no arquivo real]
 ```
 
 ---
 
-### 3.64 `README.md`
+### 4.71 `README.md`
 
 ```markdown
 # Dragon Desktop (Electron Vanilla)
@@ -16157,9 +19537,12 @@ O `<webview>` do Electron é obsoleto e gera penalidades de desempenho e seguran
 - `contextIsolation: true`: isola o escopo de execução dos scripts do preload e do renderer.
 - `sandbox: true`: executa a renderização em sandbox com privilégios reduzidos.
 - `nodeIntegration: false`: impede que páginas web acessem módulos do Node.js.
+- **Site Isolation Reforçado (`site-per-process`)**: Habilitado explicitamente antes de `app.whenReady()` via `app.commandLine.appendSwitch('site-per-process')`, garantindo que cada origem web rode em processo de renderização (renderer) próprio e isolado pelo Chromium. Testado e validado no Electron versão **^44.9.0** (Chromium 134+).
+- **Aviso de Download de Arquivo Potencialmente Perigoso**: Monitora eventos `will-download` e pausa arquivos de risco (.exe, .bat, .cmd, .msi, .ps1, .vbs, etc.), exibindo modal inferior (bottom sheet) para confirmação explícita ou cancelamento seguro antes da gravação em disco.
 - Comunicação controlada exclusivamente via `contextBridge` em `src/preload/preload.js` e `src/preload/settings-preload.js`.
 - Configuração unificada de sessões (`configureSession`) e `app.userAgentFallback` higienizado antes do ready.
 - Restrição estrita de protocolos (`setWindowOpenHandler` e `navigation:navigate`) permitindo apenas `http:`, `https:` e páginas internas do Dragon.
+- Bloqueio de pop-ups não solicitados em `setWindowOpenHandler` sem `userGesture` e interrupção de redirecionamentos em sequência rápida sem interação do usuário.
 - Validação no IPC de configurações exigindo frame principal e URL exata de `pages/settings.html`.
 
 ---
@@ -16195,10 +19578,12 @@ dragon/
 │   └── cert-error.js          # Lógica da página de erro de certificado digital
 ├── test/                      # Testes automatizados com runner nativo do Node.js (node:test)
 │   ├── clear-data.test.js     # Testes de limpeza profunda de dados e fechamento de abas
+│   ├── downloads.test.js      # Testes de detecção de extensões perigosas vs seguras
+│   ├── fingerprint.test.js    # Testes de ruído determinístico de canvas e normalização de UA
 │   ├── history.test.js        # Testes de histórico, exclusão de internas e updateTitle
 │   ├── navigation.test.js     # Testes de normalização de URLs e atalhos dragon://
 │   ├── permissions.test.js    # Testes de getPermissionKey, rótulos e fila de permissões
-│   ├── privacy.test.js        # Testes de domínios base, trackers, link cleaning e blocklist
+│   ├── privacy.test.js        # Testes de cálculo de nota A-F, redirecionamentos, trackers e blocklist
 │   ├── settings.test.js       # Testes de validação de esquemas e mescla com defaults
 │   └── tabs.test.js           # Testes de reordenação e manipulação de abas
 └── src/
@@ -16212,33 +19597,37 @@ dragon/
     │   ├── context-menu.js    # Menu de contexto nativo com cópia, pesquisa e DevTools
     │   ├── clear-data.js      # Limpeza profunda de storage, cookies, cache e abas
     │   ├── privacy.js         # Motor de privacidade: tldts, HTTPS, headers e atualização de blocklist
+    │   ├── fingerprint-protection.js # Gerador de injeção determinística de ruído e normalização
     │   ├── navigation.js      # Normalização de URLs, busca e histórico
     │   ├── history.js         # Persistência de histórico de navegação (history.json)
     │   ├── bookmarks.js       # Persistência e busca de favoritos (bookmarks.json)
-    │   ├── downloads.js       # Gerenciador de downloads e eventos will-download (downloads.json)
+    │   ├── downloads.js       # Gerenciador de downloads, will-download e verificação de extensões
     │   ├── permissions.js     # Gerenciamento de permissões por site com persistência (permissions.json)
     │   ├── session.js         # Sessão padrão, User-Agent, proxy auth e handlers de permissão
     │   ├── ipc.js             # Registro centralizado de canais IPC com validação de remetente
     │   ├── menu.js            # Menu da aplicação e aceleradores globais de teclado
     │   ├── storage.js         # Persistência atômica de arquivos JSON em app.getPath('userData')
     │   └── pure/              # Funções puras desacopladas do Electron para testes unitários
+    │       ├── download-utils.js   # Classificação pura de extensões perigosas
+    │       ├── fingerprint-utils.js # Ruído determinístico de Canvas e sanitização de User-Agent
     │       ├── navigation-utils.js # Lógica pura de URLs e busca
-    │       ├── privacy-utils.js    # Lógica pura de domínios e link cleaning
+    │       ├── privacy-utils.js    # Lógica de notas A-F, cadeia de redirecionamentos e domínios
     │       └── settings-utils.js   # Lógica pura de validação e defaults
     ├── preload/
     │   ├── preload.js          # Ponte segura para a janela principal (window.browserAPI)
     │   ├── settings-preload.js # Preload exclusivo para settings.html (window.settingsAPI)
-    │   └── tab-preload.js      # Preload para abas e páginas internas (history, bookmarks, downloads, warnings)
+    │   └── tab-preload.js      # Preload para abas (injeção de fingerprinting e páginas internas)
     └── renderer/              # Interface Gráfica (HTML / CSS / JS do navegador)
         ├── index.html         # Estrutura visual da barra superior, escudo, find-bar e modais
         ├── app.js             # Orquestrador da interface e ouvinte de estado consolidado
         ├── components/
         │   ├── addressbar.js       # Barra de endereços, favoritos e omnibox com sugestões
         │   ├── tabs-view.js        # Abas com DOM diffing por ID e Drag & Drop para reordenação
-        │   ├── toolbar.js          # Botões de navegação, recarregar, downloads e configurações
+        │   ├── toolbar.js          # Botões de navegação, badge de redirecionamento e configurações
         │   ├── find-bar.js         # Barra de busca textual na página (Ctrl+F)
         │   ├── permission-sheet.js # Modal estilo bottom-sheet para autorização por recurso
-        │   ├── privacy-shield.js   # Escudo com contador dinâmico e painel de exceções
+        │   ├── download-risk-sheet.js # Modal bottom-sheet para confirmação de downloads perigosos
+        │   ├── privacy-shield.js   # Escudo com contador dinâmico, selo A-F e painel de exceções
         │   ├── fire-button.js      # Botão de fogo azul na barra de navegação
         │   ├── fire-sheet.js       # Painel inferior de confirmação de apagar tudo
         │   └── fire-animation.js   # Animação WebGL/Canvas do Dragão Azul
@@ -16262,12 +19651,33 @@ O Dragon implementa um conjunto nativo e robusto de proteções determinísticas
 6. **Exceções Globais por Site (`privacy-exemptions.json`)**: Quando o usuário desativa o escudo para um site, a exceção desativa tanto o bloqueio de rastreadores quanto a remoção de cookies de terceiros e a redução de Referer, restaurando compatibilidade total.
 7. **Limpeza de Parâmetros de Rastreamento (Link Cleaning)**: Remove parâmetros como `utm_*`, `fbclid`, `gclid`, `msclkid`, `mc_eid`, `igshid` e `_ga` antes do carregamento da página principal.
 8. **Proteção contra Vazamento de IP via WebRTC**: Configura `default_public_interface_only` nas abas para impedir exposição do endereço IP local.
-9. **Escudo de Privacidade na Barra de Endereço**:
-   - Ícone de escudo com contador numérico em tempo real de rastreadores bloqueados na aba ativa (com throttle de até 5 atualizações por segundo).
-   - Painel flutuante montado dinamicamente com criação segura de elementos DOM e `textContent`, com interruptor para ativar/desativar a proteção por site, salvando exceções em `privacy-exemptions.json`.
+9. **Bloqueador de Pop-ups e Redirecionamentos em Cadeia Rápida**:
+   - Bloqueia automaticamente qualquer tentativa de abertura de nova janela/aba via `window.open` em `setWindowOpenHandler` que não tenha sido originada de clique real do usuário (`userGesture === false`), independentemente da disposição.
+   - Monitora eventos `will-redirect` no WebContents e detecta cadeias rápidas e abusivas de redirecionamentos automatizados (> 2 domínios diferentes em menos de 1,5s sem interação). Interrompe a navegação suspeita e exibe badge na barra de ferramentas: *"Redirecionamento bloqueado — [domínio]"* com botão *"Permitir mesmo assim"*.
+   - Pop-ups e redirecionamentos bloqueados são contabilizados por aba e exibidos no painel do escudo (`popupsBlocked`).
+   - Respeita integralmente exceções por site (`isSiteExempt`).
 
-> [!NOTE]
-> **Esclarecimento sobre Fingerprinting:** O Dragon não promete nem implementa alteração de APIs de Canvas, WebGL, Áudio ou Fontes para "mascarar" fingerprinting — técnicas desse tipo costumam quebrar sites legítimos e, paradoxalmente, geram assinaturas biométricas ainda mais raras e identificáveis. A proteção do Dragon é real, transparente e fundamentada na contenção de rede, cabeçalhos, cookies de terceiros, isolamento de sessões e descarte total de dados.
+10. **Classificação de Privacidade do Site (Selo A-F)**:
+    - O painel do escudo de privacidade exibe um selo alfabético colorido (A/B verde, C amarelo, D/F vermelho) calculado deterministicamente por `calculatePrivacyGrade(info)` em `src/main/pure/privacy-utils.js`.
+    - Critérios ponderados: protocolo (HTTPS vs HTTP inseguro), volume de rastreadores terceiros bloqueados (0 a 15+), tentativas de pop-ups/redirecionamentos forçados e bloqueio de cookies de terceiros.
+
+11. **Escudo de Privacidade na Barra de Endereço**:
+    - Ícone de escudo com contador dinâmico de rastreadores bloqueados e badge do selo de privacidade (A a F).
+    - Painel flutuante exibindo o status de segurança, contagem de pop-ups bloqueados, cookies terceiros bloqueados e interruptor para ativar/desativar proteções por site com persistência em `privacy-exemptions.json`.
+
+12. **Proteção contra Fingerprinting (Configuração Global Única, Sem Multiperfil)**:
+    - O Dragon oferece uma proteção global (ativada/desativada no painel *Privacidade Avançada* em `dragon://settings`) inspirada no comportamento nativo de navegadores como Firefox (`resistFingerprinting`) e Brave.
+    - **Objetivo**: Reduzir a singularidade do Dragon tornando sua instalação idêntica a outras instalações do próprio navegador, **sem simular perfis falsos**, múltiplas identidades ou computadores diferentes.
+    - **Controles Configuráveis**:
+      - **Fuso Horário**: Padroniza o fuso horário relatado para `UTC` via `Intl.DateTimeFormat` e Date prototype.
+      - **Resolução de Tela**: Padroniza a resolução exposta (`screen.width`, `screen.height`, `window.innerWidth/innerHeight`) para um valor comum (1920x1080), sem impactar o tamanho real ou o redimensionamento da janela do Dragon.
+      - **Ruído Determinístico no Canvas/WebGL**: Injeta uma distorção sutil (máximo ±1 canal de cor) e determinística baseada em uma semente estável por sessão em `toDataURL` e `getImageData`. Como a semente é consistente durante a sessão, sites que utilizam canvas de forma legítima continuam funcionando normalmente sem quebras visuais.
+      - **Limitação de Fontes do Sistema**: Restringe a enumeração de fontes do sistema via `document.fonts` a um conjunto padrão seguro.
+      - **Normalização de User-Agent**: Sanitiza a string de User-Agent tanto nos cabeçalhos HTTP quanto em `navigator.userAgent`, removendo menções ao Electron e estabilizando a versão do Chromium.
+    - **Isolamento de Páginas Internas**: Os scripts de proteção são injetados estritamente em páginas web normais e **nunca** nas páginas de controle do Dragon (`pages/settings.html`, `pages/newtab.html`, etc.).
+
+> [!WARNING]
+> **Ressalva Importante sobre Fingerprinting:** A proteção contra fingerprinting do navegador é uma corrida armamentista contínua entre desenvolvedores de navegadores e redes avançadas de rastreamento biométrico/comportamental. Nenhuma proteção baseada em software é 100% garantida contra técnicas invasivas emergentes ou correlações multicamadas. No entanto, ela eleva substancialmente o custo do rastreamento passivo sem comprometer a estabilidade do usuário.
 
 ---
 
@@ -16449,189 +19859,21 @@ O instalador resultante é gerado no diretório `dist/`.
 
 ---
 
-## 12. Sistema de Fingerprinting Configurável, Multivetorial e com Reset de Identidade
+## 12. Sistema de Fingerprinting Configurável e com Reset de Identidade
 
-O Dragon implementa um sistema avançado de proteção e mitigação de fingerprinting (impressão digital do navegador), comparável em potência ao Dolphin Anty, mantendo a filosofia central do Dragon de **"configurar o navegador apenas"** (uma única configuração global soberana, sem complexidade de múltiplos perfis ou contas).
+O Dragon conta com mitigação avançada de fingerprinting multivetorial inspirada em navegadores antidetect modernos (como o Dolphin Anty), projetada para proteger o usuário de rastreamento invasivo por impressão digital mantendo a abordagem simples de **configuração global do navegador** (sem necessidade de gerenciar múltiplos perfis ou contas).
 
-### 12.1 Princípios Arquiteturais e Garantias de Segurança
-1. **Determinismo por Sessão**: O mesmo usuário/semente obtém rigorosamente a mesma resposta dentro da sessão. Não há ruídos aleatórios a cada invocação de API (o que facilitaria detecção por sites antifraude).
-2. **Consistência Interna**: Combinações impossíveis são estritamente bloqueadas por `validateFingerprintConsistency` (ex.: macOS com GPU NVIDIA é bloqueado; Firefox com User-Agent Chrome emite avisos).
-3. **Isolamento Absoluto**: O script de mitigação só é injetado via `tab-preload.js` em páginas web reais (`http://` e `https://`). Páginas internas do Dragon (`dragon://` ou `pages/*.html`) nunca sofrem injeção.
-4. **Modos por Vetor**: Suporte flexível a `real` (sem alteração), `noise` (ruído sutil determinístico por semente) e `mask` (máscara ou emulação de valores fixos).
-5. **Zero Dependências Novas**: Desenvolvido integralmente em JavaScript puro utilizando APIs padrão do Node.js, Electron e Web APIs.
-
-### 12.2 Vetores de Fingerprinting Suportados
-
-- **Grupo A — Identidade do Sistema**:
-  - `fpOs`: Sistema operacional alvo (`windows11`, `windows10`, `macos`, `linux`).
-  - `fpBrowser`: Navegador reportado (`chrome`, `edge`, `firefox`).
-  - `fpUserAgent`: Assinatura de `navigator.userAgent` e `navigator.appVersion` (auto-derivada ou manual).
-  - `fpPlatform`: `navigator.platform` (`auto`, `Win32`, `MacIntel`, `Linux x86_64`).
-  - `fpLocale`: `navigator.language` e `navigator.languages` (`pt-BR`, `en-US`, `es-ES`, `fr-FR`, `de-DE`).
-  - `fpTimezone`: Fuso horário reportado via `Intl.DateTimeFormat` e `Date.prototype.getTimezoneOffset` (`America/Sao_Paulo`, `America/New_York`, `UTC`, etc.).
-
-- **Grupo B — Hardware e Resolução**:
-  - `fpScreenResolution`: Dimensões da tela reportadas em `window.screen` (`1920x1080`, `2560x1440`, `1366x768`, `1536x864`, `2880x1800`, `3840x2160`).
-  - `fpDevicePixelRatio`: `window.devicePixelRatio` (`auto`, `1`, `1.25`, `1.5`, `2`, `3`).
-  - `fpHardwareConcurrency`: Núcleos lógicos de processamento em `navigator.hardwareConcurrency` (2 a 16).
-  - `fpDeviceMemory`: Memória RAM relatada em `navigator.deviceMemory` (2 a 32 GB).
-  - `fpTouchSupport`: Suporte a toque via `navigator.maxTouchPoints`.
-
-- **Grupo C — Placa de Vídeo e WebGL**:
-  - `fpWebglVendor`: Fabricante exposto via extensão `UNMASKED_VENDOR_WEBGL` (0x9245).
-  - `fpWebglRenderer`: Renderizador de vídeo via `UNMASKED_RENDERER_WEBGL` (0x9246).
-  - `fpWebglImageMode`: Proteção de leitura de pixels offscreen via `WebGLRenderingContext.prototype.readPixels`.
-
-- **Grupo D — Canvas 2D, Áudio, ClientRects & Fontes**:
-  - `fpCanvasMode`: Ruído determinístico (±1 canal de cor preservando transparência) em `toDataURL` e `getImageData`.
-  - `fpAudioMode`: Ruído sutil em `AudioBuffer.prototype.getChannelData` mantendo a assinatura sonora limpa.
-  - `fpClientRectsMode`: Micro-ruído imperceptível (±0.05px) ou arredondamento em `Element.prototype.getBoundingClientRect`.
-  - `fpFontsMode`: Filtragem de enumeração de fontes em `document.fonts.check` para fontes do SO alvo.
-
-- **Grupo E — Outros Vetores**:
-  - `fpWebrtcMode`: Política de WebRTC (`proxy`, `disabled`, `real`).
-  - `fpMediaDevicesCount`: Quantidade de dispositivos simulados em `navigator.mediaDevices.enumerateDevices`.
-  - `fpSpeechVoices`: Emulação de vozes nativas em `window.speechSynthesis.getVoices`.
-  - `fpBatteryMode`: Mascaramento do status da bateria via `navigator.getBattery`.
-  - `fpPermissionsMode`: Mascaramento de status de permissões para `prompt` em `navigator.permissions.query`.
-
-### 12.3 Mecanismo de Reset de Identidade do Fingerprint
-
-- **Semente Persistente (`fpFingerprintSeed`)**: Inteiro de 32 bits persistido no `settings.json`.
-- **Botão "Resetar Fingerprint"**: Localizado no topo do painel de Configurações (`pages/settings.html`). Ao ser acionado com confirmação do usuário:
-  1. Invoca o canal IPC `fingerprint:reset` (com validação `isSettingsSender`).
-  2. Sorteia uma nova semente criptográfica e gera uma identidade 100% consistente via `pickRandomConsistentPreset()`.
-  3. Grava as novas configurações de fingerprint de forma atômica no `settings.json`.
-  4. Chama `tabManager.reloadAllWebTabs()` recarregando automaticamente todas as abas web abertas para assumirem a nova identidade imediatamente.
-  5. Exibe feedback visual na interface e atualiza todos os campos de controle em tempo real.
-
-### 12.4 Resolução do Mecanismo de Busca (Normalização e Templates)
-- **Correção da passagem de template**: Corrigido `src/main/navigation.js` que chamava `settings.getSearchUrl('%s')` (codificando para `%25s` e impedindo a substituição de termos digitados). Agora utiliza diretamente `settings.getSearchUrlTemplate()`.
-- **Suporte robusto a templates (`applySearchTemplate`)**: `src/main/pure/navigation-utils.js` e `pages/newtab.js` agora suportam templates com `%s`, `%25s` ou URLs base, garantindo que termos pesquisados na barra de endereços e na página de nova aba sejam devidamente codificados e navegados com o buscador selecionado.
+### Destaques do Sistema
+- **5 Grupos de Vetores**:
+  - **Grupo A (Sistema)**: OS (`windows11`, `windows10`, `macos`, `linux`), Navegador (`chrome`, `edge`, `firefox`), User-Agent, Plataforma (`Win32`, `MacIntel`, etc.), Idioma e Fuso Horário (`America/Sao_Paulo`, etc.).
+  - **Grupo B (Hardware)**: Resolução de Tela (`1920x1080`, `2560x1440`, etc.), Device Pixel Ratio (DPR), CPU Cores (`hardwareConcurrency`), Memória RAM (`deviceMemory`) e Touch (`maxTouchPoints`).
+  - **Grupo C (GPU & WebGL)**: GPU Vendor e Renderer (ANGLE/Direct3D11/Metal) e mitigação em `readPixels`.
+  - **Grupo D (Canvas, Áudio, ClientRects & Fontes)**: Ruído determinístico imperceptível em Canvas 2D (`toDataURL`, `getImageData`), AudioBuffer (`getChannelData`), ClientRects (`getBoundingClientRect`) e limitação de fontes do SO alvo.
+  - **Grupo E (Outros Vetores)**: WebRTC (proxy, disabled, real), contagem de dispositivos de mídia (`enumerateDevices`), vozes de síntese (`speechSynthesis.getVoices`), bateria (`getBattery`) e permissões (`permissions.query`).
+- **Validação de Consistência Interna**: Impede combinações impossíveis (ex.: macOS com GPUs NVIDIA é estritamente bloqueado) e alerta sobre configurações incomuns.
+- **Botão "Resetar Fingerprint"**: Sorteia uma nova semente de 32 bits e gera uma identidade completamente nova e coerente com um clique, recarregando automaticamente todas as abas web abertas.
+- **Determinismo e Isolamento**: O ruído permanece perfeitamente estável durante a mesma sessão. Injeção restrita a páginas web (`http:` e `https:`), nunca tocando páginas internas do navegador.
 ```
 
 ---
-
-## 4. RELATÓRIO CONSOLIDADO DE AUDITORIA, SEGURANÇA E TESTES
-
-### 4.1 Resumo Executivo da Auditoria de Conformidade
-Esta auditoria avaliou a totalidade da base de código do **Dragon Browser**, abrangendo conformidade arquitetural, endurecimento de segurança do Electron, persistência atômica, modularidade sem frameworks externos e validação unitária automatizada.
-
-| Área de Avaliação | Requisito / Padrão | Status | Observações Técnicas |
-| :--- | :--- | :---: | :--- |
-| **Arquitetura Base** | Electron + CommonJS puro sem bundlers | ✅ 100% Conforme | Zero Webpack, Vite, Babel ou TypeScript. Executável nativo com `npm start`. |
-| **Isolamento de Abas** | WebContentsView nativo desacoplado | ✅ 100% Conforme | Sem `<webview>` obsoleto. Reposicionamento via limites dinâmicos da janela. |
-| **Hardening Electron** | `contextIsolation: true`, `sandbox: true` | ✅ 100% Conforme | Aplicado universalmente na janela principal, abas web e diálogos. |
-| **Site Isolation** | `site-per-process` ativado | ✅ 100% Conforme | Flag anexada antes de `app.whenReady()`. Validado no Electron ^44.9.0. |
-| **Validação IPC** | Restrição de remetente por canal | ✅ 100% Conforme | `isMainSender`, `isSettingsSender` e `isPageSender` validam origin e frame. |
-| **Motor de Privacidade** | Blocklist de 3.500+ domínios via `tldts` | ✅ 100% Conforme | Intercepta requisições web, limpa parâmetros de rastreamento e bloqueia cookies de terceiros. |
-| **Anti-Fingerprint** | Multivetorial configurável (Dolphin-Anty) | ✅ 100% Conforme | 5 grupos de vetores, ruído determinístico por semente, consistência estrita e reset com 1 clique. |
-| **Mecanismo de Busca** | Normalização e templates `%s` / `%25s` | ✅ 100% Conforme | Busca sem dupla codificação; suporta Google, DuckDuckGo, Bing, Brave e Ecosia. |
-| **Proteção de Downloads** | Detecção de extensões de risco executáveis | ✅ 100% Conforme | Pausa automática e bottom-sheet nativo com confirmação explícita. |
-| **Abas Privadas** | Sessão puramente em memória | ✅ 100% Conforme | `session.fromPartition('private-<id>')` sem gravação em disco. |
-| **O Fogo do Dragão** | Limpeza atômica profunda de dados | ✅ 100% Conforme | Apaga caches, cookies, histórico, permissões e esvazia pilha de abas fechadas. |
-| **Suíte de Testes** | Test runner nativo do Node.js (`node:test`) | ✅ 100% Conforme | **45 testes passando** com 0 falhas, sem dependências de terceiros. |
-
----
-
-### 4.2 Matriz de Segurança e Isolamento do Electron
-
-O projeto cumpre rigorosamente as recomendações oficiais de segurança da equipe do Electron (*Security Checklist*):
-
-1. **`contextIsolation: true` Universal**: Os preloads executam em contextos JavaScript separados das páginas web e do renderer da interface principal. Objetos sensíveis do Node.js ou do Electron nunca vazam para o DOM.
-2. **`sandbox: true` Universal**: Todo processo de renderização opera sob a sandbox do Chromium com privilégios de sistema estritamente limitados.
-3. **`nodeIntegration: false` Universal**: Nenhum script de página web ou componente visual possui acesso direto a APIs `require()` ou globais do Node.js.
-4. **Isolamento de Processos por Origem (`site-per-process`)**: A flag de linha de comando `site-per-process` garante que páginas de origens distintas sejam renderizadas em processos de sistema operacional completamente separados, prevenindo ataques cross-site de canal lateral (ex: Spectre).
-5. **Validação Estrita de Remetentes no IPC (`src/main/ipc.js`)**:
-   - `isMainSender(event)`: Garante que canais da interface do navegador só atendam ao frame principal da janela principal (`appWindow`).
-   - `isSettingsSender(event)`: Garante que canais administrativos (ex.: alteração de configurações e `fingerprint:reset`) só atendam a páginas internas `pages/settings.html`.
-   - `isPageSender(event)`: Garante que páginas internas utilitárias (histórico, favoritos, downloads) só acessem seus respectivos escopos autorizados.
-6. **Criptografia DPAPI de Credenciais de Proxy**: Senhas de proxy configuradas pelo usuário são cifradas no Windows através de `safeStorage.encryptString()` da API do Electron, impedindo a exposição de credenciais em texto claro no `settings.json`.
-7. **Bypass Controlado de HTTPS e Erros SSL/TLS**: A liberação de hosts inseguros exige geração de token criptográfico temporário de uso único (`crypto.randomUUID`, validade de 30s) pelo processo principal, vinculado estritamente à aba requisitante.
-
----
-
-### 4.3 Resultados Consolidados da Suíte de Testes Unitários
-
-Executado via `node --test` com o runner nativo do Node.js (sem frameworks externos):
-
-```text
-✔ clearAllData: limpa histórico, downloads, permissões e preserva favoritos por padrão (25.7ms)
-✔ clearAllData: apaga favoritos quando includeBookmarks for true (21.0ms)
-✔ clearAllData: limpa a pilha de abas fechadas (closedTabsStack) impedindo Ctrl+Shift+T de reabrir páginas apagadas (9.8ms)
-✔ clearAllData: registra falhas no summary.errors e define success:false caso ocorra erro (15.5ms)
-✔ isRiskyDownload: identifica corretamente extensões potencialmente perigosas (2.0ms)
-✔ isRiskyDownload: não bloqueia nem afeta extensões seguras e comuns (0.5ms)
-✔ applyDeterministicCanvasNoise: mesma semente produz rigorosamente o mesmo resultado (6.5ms)
-✔ applyDeterministicCanvasNoise: sementes diferentes produzem distorções distintas (0.4ms)
-✔ applyDeterministicCanvasNoise: distorção é sutil (máximo +-1) e preserva transparência (0.4ms)
-✔ applyAudioNoise: ruído de áudio é determinístico e imperceptível (1.5ms)
-✔ applyClientRectsNoise: ruído de geometria é determinístico e restrito (0.6ms)
-✔ normalizeUserAgentString: remove Electron e normaliza versão estável do Chrome (0.5ms)
-✔ deriveUserAgent: deriva strings coerentes para SO e Navegador (0.4ms)
-✔ derivePlatform e deriveDevicePixelRatio: valores corretos (0.3ms)
-✔ deriveWebglRenderer: nunca retorna NVIDIA em macOS (0.3ms)
-✔ validateFingerprintConsistency: bloqueia macOS com NVIDIA com erro estrito (0.6ms)
-✔ validateFingerprintConsistency: detecta avisos para combinações improváveis (0.4ms)
-✔ buildFingerprintSeed: gera semente de 32 bits determinística (0.5ms)
-✔ pickRandomConsistentPresetWithSeed: determinismo absoluto e consistência 100% (0.7ms)
-✔ pickRandomConsistentPreset: sorteia preset 100% consistente sem erros (0.7ms)
-✔ getFingerprintOptions: retorna listas completas para a UI (0.7ms)
-✔ history: não registra páginas internas (dragon://, settings, downloads, history, bookmarks) (2.5ms)
-✔ history.updateTitle: atualiza o título da entrada mais recente sem criar duplicatas (19.6ms)
-✔ history: flushHistorySync grava imediatamente em disco (9.0ms)
-✔ normalizeInput: entrada vazia retorna newtab (2.1ms)
-✔ normalizeInput: atalhos dragon:// e about:// para páginas internas (0.3ms)
-✔ normalizeInput: URLs com protocolo explícito mantidas (0.5ms)
-✔ normalizeInput: localhost e IPs recebem http:// (0.9ms)
-✔ normalizeInput: domínios recebem https:// (1.6ms)
-✔ normalizeInput: palavras soltas ou com espaços viram busca (0.4ms)
-✔ applySearchTemplate: substitui %s ou %25s corretamente e codifica queries (0.3ms)
-✔ navigation (módulo principal): normalizeInput gera URL de pesquisa correta sem %25s (17.5ms)
-✔ getPermissionKey: mapeia corretamente câmera, microfone e câmera+microfone (1.9ms)
-✔ getPermissionLabel: retorna rótulos em português corretos (0.3ms)
-✔ Fila de permissões: lógica pura de enfileiramento e resolução sequencial (1.9ms)
-✔ getBaseDomain: extração de domínio com tldts (incluindo domínios multipartes e privados) (2.7ms)
-✔ isLocalHost: identifica loopback, IPs privados e mDNS (0.9ms)
-✔ isTrackerDomain: detecta correspondência exata e subdomínios (0.3ms)
-✔ cleanTrackingParameters: remove utm_*, fbclid, gclid, etc. (0.7ms)
-✔ isValidBlocklistHost: valida apenas linhas sintaticamente corretas de domínios (0.4ms)
-✔ calculatePrivacyGrade: calcula notas A, C e F com base nas métricas de privacidade (0.3ms)
-✔ isSuspiciousRedirectChain: detecta sequências rápidas de redirecionamento entre domínios diferentes (0.5ms)
-✔ isValidSetting: valida tipos, limites e enums (1.3ms)
-✔ mergeWithDefaults: mescla chaves válidas e descarta corrompidas (0.3ms)
-✔ reorderTabs: reordena corretamente elementos em array de abas (1.6ms)
-
-=============================================================================
-TOTAL: 45 testes executados | 45 aprovados | 0 falhas | 0 cancelados
-Tempo total de execução: ~370ms
-=============================================================================
-```
-
----
-
-### 4.4 Guia de Operação e Comandos de Verificação
-
-Para verificar e operar o Dragon em ambiente Windows:
-
-1. **Instalação das dependências:**
-   ```powershell
-   npm.cmd install
-   ```
-2. **Execução da suíte de testes unitários:**
-   ```powershell
-   npm.cmd test
-   ```
-3. **Inicialização do navegador em desenvolvimento:**
-   ```powershell
-   npm.cmd start
-   ```
-4. **Empacotamento do instalador executável para Windows (.exe via NSIS):**
-   ```powershell
-   npm.cmd run dist
-   ```
-
----
-
-**Conclusão da Auditoria:** O projeto **Dragon Desktop** encontra-se em estado exemplar de conformidade técnica, segurança, desempenho e documentação integral. Todos os 45 testes automatizados passam com 100% de sucesso e o código está plenamente pronto para uso e distribuição.
 

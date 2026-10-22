@@ -50,6 +50,16 @@ const ipcModule = require('./ipc');
 const menuModule = require('./menu');
 const privacy = require('./privacy');
 const history = require('./history');
+const clearData = require('./clear-data');
+
+// Tratamento centralizado de erros não capturados para estabilidade e logs consistentes
+process.on('uncaughtException', (err) => {
+  console.error('[Dragon Main] Exceção não capturada no processo principal:', err);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[Dragon Main] Rejeição de Promise não tratada:', reason);
+});
 
 // 3. Garantir instância única da aplicação
 const gotTheLock = app.requestSingleInstanceLock();
@@ -181,10 +191,31 @@ if (!gotTheLock) {
     callback(false);
   });
 
+  let isClearingOnExit = false;
+
   // Grava o histórico imediatamente de forma síncrona ao encerrar (Bloco 1.10)
-  app.on('before-quit', () => {
+  // e limpa todos os dados se 'clearDataOnExit' estiver ativado (ETAPA 3)
+  app.on('before-quit', async (event) => {
     if (typeof history.flushHistorySync === 'function') {
       history.flushHistorySync();
+    }
+
+    if (settings.get('clearDataOnExit') && !isClearingOnExit) {
+      isClearingOnExit = true;
+      event.preventDefault();
+      try {
+        console.log('[App] clearDataOnExit ativo: limpando dados do navegador antes de encerrar...');
+        await clearData.clearAllData({
+          mainWindow,
+          tabManager,
+          storage
+        });
+        console.log('[App] Limpeza ao fechar concluída com sucesso.');
+      } catch (err) {
+        console.error('[App] Erro na limpeza ao fechar:', err.message);
+      } finally {
+        app.quit();
+      }
     }
   });
 
