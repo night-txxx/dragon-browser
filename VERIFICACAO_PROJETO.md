@@ -1,242 +1,159 @@
 # DOSSIÊ COMPLETO DE AUDITORIA E VERIFICAÇÃO DO PROJETO: DRAGON
 
-Este documento consolida o relatório integral de auditoria, diagnóstico de segurança, ciclo de engenharia (Etapas 0 a 5) e o **código-fonte completo e sem omissões** de todos os arquivos do navegador desktop **Dragon**, construído em **Electron puro**, JavaScript CommonJS e Vanilla JS, com foco rigoroso em privacidade, isolamento de processos e segurança.
+Este documento consolida o relatório integral de auditoria, diagnóstico de segurança, ciclo completo de engenharia (Etapas 0 a 6 - Partes A e B) e o **código-fonte integral e sem omissões** de todos os arquivos do navegador desktop **Dragon**, construído em **Electron puro**, JavaScript CommonJS no main process e Vanilla JS na interface, com foco rigoroso em privacidade, isolamento de processos e segurança.
 
 ---
 
-## 1. REGISTRO DAS ETAPAS DE ENGENHARIA (ETAPA 0 A ETAPA 5)
+## 1. REGISTRO DAS ETAPAS DE ENGENHARIA (PARTE A E PARTE B: ETAPAS 0 A 6)
 
-Abaixo está o registro detalhado de todas as etapas executadas pelo Engenheiro Sênior de Electron:
-
-### ETAPA 0: DIAGNÓSTICO DO PROJETO
-Auditoria inicial em todo o código-fonte sem alterações, mapeando vulnerabilidades, falhas de isolamento, vazamento de memória e inconsistências funcionais:
-* **Botão "Apagar Tudo"**: Invocava limpeza de partição com parâmetros parciais, deixando sessões privadas ativas em memória e não notificando adequadamente o renderer caso ocorressem exceções.
-* **Segurança do Electron**: Ausência de interceptação universal de `will-navigate` e `setWindowOpenHandler` na janela principal; necessidade de negar permissões de hardware por padrão (`setPermissionRequestHandler`); falta de validação estrita de tipos primitivos em canais IPC sensíveis de downloads.
-* **Privacidade**: Inexistência da opção do usuário para limpar dados automaticamente ao encerrar o navegador (`clearDataOnExit`); necessidade de reforçar isolamento de processos via flag `site-per-process`.
-* **Organização**: Presença de comentários mortos de protótipos de métodos em `storage.js` e ausência de arquivo de regras de ESLint adaptado ao projeto.
+### ETAPA 0: DIAGNÓSTICO E CHECKPOINT INICIAL
+* Auditoria completa em todos os módulos de backend (`src/main/`), preload (`src/preload/`), interface (`src/renderer/`), páginas internas (`pages/`) e testes (`test/`).
+* Criação do tag Git `checkpoint-etapa-0`.
 
 ---
 
-### ETAPA 1: BUGS QUE QUEBRAM FUNÇÕES (APAGAR TUDO)
-* **src/main/clear-data.js**:
-  - Implementada chamada geral recomendada `defaultSession.clearStorageData({})` antes de varrer cada tipo de storage específico.
-  - Adicionado log explícito e tratamento assíncrono para `clearCache`, `clearCodeCaches`, `clearAuthCache` e `clearHostResolverCache`.
-  - Inclusa limpeza de autenticação HTTP (`clearAuthCache`) nas partições privadas ativas.
-* **src/main/tabs.js**:
-  - Em `destroyAllTabs`, isolou-se a destruição de cada aba individual em blocos `try/catch` protegidos, garantindo que o fechamento prossiga mesmo se uma aba específica estiver travada.
-* **src/main/ipc.js**:
-  - No handler `app:finish-clear-session`, adicionou-se a chamada explícita `tabManager.notifyStateChange()`, sincronizando a interface gráfica instantaneamente.
-* **src/renderer/components/fire-animation.js**:
-  - O loop de renderização do frame de animação WebGL foi envolvido em bloco `try/catch` com fallback automático para Canvas 2D, garantindo que o callback de conclusão e limpeza seja sempre chamado.
+### ETAPA 1: CORREÇÕES PRIORITÁRIAS (SEGURANÇA, LIMPEZA, PROXY E OVERLAYS)
+1. **1.1 Storage Backups, Downloads Risk e Teardown de Limpeza**:
+   - `storage.js`: Adicionado suporte a `options.noBackup` e método `removeBackupAndTempFiles(key)` para expurgar arquivos `.bak` e temporários de dados sensíveis.
+   - `history.js`: Limpeza síncrona com remoção física de cópias de segurança de histórico.
+   - `downloads.js`: Implementado `cancelAllActiveDownloads()` que cancela downloads ativos, desassocia eventos e apaga arquivos parciais inacabados no disco. Em downloads de risco, garantia de pausa síncrona com `item.setSavePath(savePath)` antes da confirmação do usuário.
+   - `tabs.js`: Implementado método assíncrono `destroyAllTabs()` com escuta do evento `destroyed` e timeout de segurança de 500ms, assegurando que todas as WebContentsViews sejam destruídas antes da limpeza de storage.
+   - `session.js`: Implementado `clearPrivatePermissions()` para descarte de permissões efêmeras ao limpar dados.
+   - `clear-data.js`: Orquestração completa de teardown: destruição assíncrona prévia de abas, chamada geral `clearStorageData({})` seguida de segunda passagem específica por tipos de storage, limpeza de caches (`clearCache`, `clearCodeCaches`, `clearAuthCache`, `clearHostResolverCache`), descarte de partições privadas e sobrescrita de `sessions.json` com `noBackup: true`.
+   - `main.js`: Adicionado marcador atômico `.migrated` na migração do perfil legado (`meu-navegador` para `Dragon`), impedindo ressurreição de dados antigos em reinicializações subsequentes.
+   - `fire-animation.js`: Tratamento robusto com `try/finally`, garantindo a limpeza pontual de timers e desbloqueio da interface.
+
+2. **1.2 Proxy Robusto e Seguro**:
+   - `src/main/pure/settings-utils.js`: Implementadas as funções puras `convertProxySettingsToUI` e `convertProxyUIToSettings` mapeando de/para o esquema persistido do backend (`proxyMode`, `proxyRules`, `proxyAuthUser`, `applyProxyToPrivateTabs`).
+   - `pages/settings.js`: Vinculação direta da interface às chaves do backend, montando `proxyRules` como `protocolo://host:porta` e salvando preferências no modelo persistido.
+   - `src/main/settings.js`: Mascaramento de credenciais com `hasProxyPassword: true` e ocultação da chave de senha nos broadcasts `settings:changed`.
+   - `test/settings.test.js`: Testes unitários para validação bidirecional dos conversores de proxy.
+
+3. **1.4 Overlay com Set de Donos**:
+   - `src/main/window.js`: Substituição de controle booleano por `overlayOwners = new Set()`, suportando múltiplos chamadores concorrentes (`'omnibox'`, `'shield'`, `'permission'`, `'download-risk'`, `'fire-sheet'`) sem fechamento prematuro da camada oculta.
 
 ---
 
-### ETAPA 2: SEGURANÇA DO ELECTRON
-* **src/main/window.js**:
-  - Adicionada interceptação explícita de `will-navigate` com `event.preventDefault()` e `setWindowOpenHandler(() => ({ action: 'deny' }))` no `webContents` da janela principal (UI), impedindo que a casca do navegador navegue para URLs externas.
-* **src/main/tabs.js**:
-  - Substituída validação condicional por interceptação universal de `will-navigate` em todas as abas criadas, validando destinos com `isAllowedNavigationUrl` e bloqueando navegações arbitrárias para protocolos perigosos (`javascript:`, `data:`, `vbscript:`, etc.).
-* **src/main/session.js**:
-  - Endurecido o `setPermissionRequestHandler`: exige categoricamente que `details.isMainFrame !== false` e rejeita por padrão (`callback(false)`) qualquer solicitação de permissão de hardware ou recurso sensível.
-* **src/main/ipc.js**:
-  - Implementada validação estrita de tipo de dados e verificação de string não vazia nos canais `downloads:open-file` e `downloads:show-in-folder`.
-* **src/renderer/index.html**:
-  - A Content-Security-Policy (CSP) da interface do navegador foi explicitamente reforçada com `script-src 'self'`.
+### ETAPA 2: TOKENS DE DIÁLOGOS E MODAIS
+* Inclusão dos tokens semânticos de diálogos no tema escuro (`:root`) e claro (`body.theme-light`) em `src/renderer/styles/theme.css`:
+  - `--dialog-bg`: `#23232b` (escuro) / `#ffffff` (claro)
+  - `--dialog-border`: `rgba(255, 255, 255, 0.08)` (escuro) / `rgba(0, 0, 0, 0.08)` (claro)
+  - `--dialog-shadow`: `0 20px 48px rgba(0, 0, 0, 0.55), 0 0 1px rgba(255, 255, 255, 0.1)` (escuro) / `0 20px 48px rgba(0, 0, 0, 0.14), 0 0 1px rgba(0, 0, 0, 0.08)` (claro)
+  - `--dialog-backdrop`: `rgba(8, 10, 20, 0.62)` (escuro) / `rgba(15, 23, 42, 0.38)` (claro)
+  - `--danger`: `#ef4444` (escuro) / `#dc2626` (claro)
+* Checkpoint Git criado: `checkpoint-etapa-2`.
 
 ---
 
-### ETAPA 3: PRIVACIDADE
-* **src/main/pure/settings-utils.js & test/settings.test.js**:
-  - Adicionada a chave `clearDataOnExit: false` ao esquema padrão de configurações (`DEFAULT_SETTINGS`) e na validação de tipos de `isValidSetting`.
-* **src/main/main.js**:
-  - No evento `before-quit`, implementada interceptação assíncrona que verifica se `clearDataOnExit` está ativo: previne o encerramento imediato, dispara `clearData.clearAllData` e só encerra a aplicação após a confirmação da limpeza total de caches, cookies e histórico.
-  - Adicionado o switch do Chromium `app.commandLine.appendSwitch('site-per-process')` para garantir Site Isolation e proteção contra ataques de canal lateral (Spectre/Meltdown).
-* **pages/settings.html & pages/settings.js**:
-  - Adicionado o switch visual "Limpar dados ao fechar o navegador" com sincronização bidirecional na API de configurações.
-* **src/main/tabs.js**:
-  - Endurecida a limpeza e descarte de partições de abas privadas no fechamento individual de abas, acionando `clearStorageData({})`, `clearCache()` e `clearAuthCache()`.
+### ETAPA 3: POPUPS E DIÁLOGOS DA INTERFACE PRINCIPAL
+* Implementação visual da Seção 15 em `src/renderer/styles/components.css`:
+  - Cartões modais centralizados com largura máxima de 440px, padding generoso (26px 26px 22px), raio de borda de 18px e backdrop filter blur.
+  - Cabeçalho com ícones de 52x52px, raio de 14px e tipografia consistente.
+  - Botões de ação em grid de 2 colunas, altura fixa de 42px, cantos arredondados de 12px, variante primária e secundária.
+  - Variação de perigo com texto e destaque em vermelho no download de risco.
+  - Gradiente radiante e brilho de fogo azul na confirmação do Apagar Tudo.
+  - Aplicação dos tokens de tema no Escudo de Privacidade (`#privacy-shield-popup`), Toast (`#notification-toast`), Omnibox (`#omnibox-dropdown`) e barra de busca (`#find-bar`).
+* Checkpoint Git criado: `checkpoint-etapa-3`.
 
 ---
 
-### ETAPA 4: ORGANIZAÇÃO E QUALIDADE
-* **src/main/main.js**:
-  - Adicionados tratamentos centrais para `uncaughtException` e `unhandledRejection`, registrando erros detalhados no console e evitando falhas silenciosas no processo principal.
-* **src/renderer/app.js**:
-  - Adicionados ouvintes globais para eventos de `error` e `unhandledrejection` na janela da interface gráfica.
-* **src/main/storage.js**:
-  - Removidos blocos de comentários mortos e redundantes deixados por protótipos de extensão anteriores.
-* **.eslintrc.json**:
-  - Criado arquivo de configuração do ESLint na raiz ajustado ao ecossistema do Dragon (Node.js ES2022 no main e Browser com globais seguras `browserAPI` e `settingsAPI` no renderer), sem adicionar dependências ou passos de build.
+### ETAPA 4: DIÁLOGOS MODAIS DAS PÁGINAS INTERNAS
+* Criação de `pages/dialog.css` e `pages/dialog.js`, eliminando todos os `window.confirm()` e `window.alert()` nativos nas páginas internas (`history`, `bookmarks`, `downloads`, `settings`, `cert-error`, `https-warning`).
+* Implementação acessível: foco inicial seguro (no Cancelar para ações destrutivas), trap de teclado (Tab/Shift+Tab), tecla Esc, restauração do foco anterior ao fechar e construção estrita via DOM API (sem concatenação de strings HTML).
+* Criação de testes unitários em `test/dialog.test.js` para validação de opções e fallbacks.
+* Checkpoint Git criado: `checkpoint-etapa-4`.
 
 ---
 
-### ETAPA 5: CHECKLIST DE TESTES MANUAIS E FECHAMENTO
-
-#### Checklist Completo de Testes Funcionais:
-1. **Abas e Navegação**:
-   - [ ] Abrir nova aba pelo botão `+` e pelo atalho <kbd>Ctrl+T</kbd>.
-   - [ ] Fechar aba ativa pelo botão `x` e pelo atalho <kbd>Ctrl+W</kbd>.
-   - [ ] Fechar a última aba restante: o navegador deve criar automaticamente uma nova aba limpa.
-   - [ ] Alternar entre abas abertas usando <kbd>Ctrl+Tab</kbd> e <kbd>Ctrl+Shift+Tab</kbd>.
-   - [ ] Alternar diretamente para abas específicas com <kbd>Ctrl+1</kbd> até <kbd>Ctrl+8</kbd>, e <kbd>Ctrl+9</kbd> para a última aba.
-   - [ ] Reabrir a última aba fechada com <kbd>Ctrl+Shift+T</kbd> (não deve restaurar abas privadas).
-   - [ ] Reordenar abas arrastando e soltando com o mouse (Drag & Drop sem flicker).
-   - [ ] Navegar para uma URL completa (`https://duckduckgo.com`).
-   - [ ] Digitar termos de busca na Omnibox e pressionar Enter: deve abrir a pesquisa no mecanismo padrão configurado.
-   - [ ] Utilizar o histórico de navegação com os botões Voltar / Avançar e atalhos <kbd>Alt+←</kbd> / <kbd>Alt+→</kbd>.
-   - [ ] Recarregar a página com o botão de recarregar e atalhos <kbd>Ctrl+R</kbd> ou <kbd>F5</kbd>.
-   - [ ] Ajustar zoom da página com <kbd>Ctrl++</kbd>, <kbd>Ctrl+-</kbd> e redefinir com <kbd>Ctrl+0</kbd>.
-   - [ ] Abrir barra de pesquisa textual na página com <kbd>Ctrl+F</kbd>, buscar termos e fechar com <kbd>Esc</kbd>.
-
-2. **Histórico, Favoritos e Downloads**:
-   - [ ] Acessar o Histórico via menu ou atalho <kbd>Ctrl+H</kbd> (`dragon://history`).
-   - [ ] Excluir um item individual do histórico e verificar persistência.
-   - [ ] Limpar todo o histórico e confirmar que a página é atualizada.
-   - [ ] Adicionar página atual aos favoritos pelo atalho <kbd>Ctrl+D</kbd> ou botão de estrela na barra de endereços.
-   - [ ] Acessar Favoritos via atalho ou endereço `dragon://bookmarks` e abrir um link favorito.
-   - [ ] Baixar um arquivo comum (ex: imagem ou PDF) e verificar a barra de progresso no gerenciador de downloads (<kbd>Ctrl+J</kbd>).
-   - [ ] Baixar um executável (.exe ou .msi) e verificar se o modal de aviso de risco de download é exibido antes de salvar.
-
-3. **Configurações e Personalização**:
-   - [ ] Abrir Configurações pelo menu ou atalho <kbd>Ctrl+,</kbd> (`dragon://settings`).
-   - [ ] Alterar o mecanismo de busca padrão (Google, DuckDuckGo, Bing, etc.) e validar em nova busca.
-   - [ ] Alterar a cor de destaque (Accent Color) na paleta e verificar aplicação em tempo real nos botões e bordas.
-   - [ ] Alternar entre tema Escuro, Claro e Seguir o Sistema.
-   - [ ] Ativar a opção **"Limpar dados ao fechar o navegador"**, navegar, fechar o navegador e conferir se o histórico e sessões foram zerados.
-
-4. **Privacidade e Abas Privadas**:
-   - [ ] Abrir uma aba privada via menu ou atalho <kbd>Ctrl+Shift+N</kbd>.
-   - [ ] Verificar o distintivo de "Nova Aba Privada" e verificar que ela utiliza partição isolada em memória (`private-<id>`).
-   - [ ] Fazer login em um site na aba privada e fechar a aba: reabrir a página em outra aba e verificar que os cookies não persistem.
-   - [ ] Clicar no Escudo de Privacidade na barra de navegação para visualizar a nota do site e a contagem de rastreadores bloqueados.
-   - [ ] Alternar a chave de exceção de proteção do escudo para o domínio ativo.
-
-5. **Apagar Tudo (O Fogo do Dragão Azul)**:
-   - [ ] Clicar no botão da chama azul na barra de ferramentas ou pressionar <kbd>Ctrl+Shift+Del</kbd>.
-   - [ ] No painel inferior de confirmação, optar por incluir ou não os favoritos.
-   - [ ] Clicar em "Apagar tudo agora": verificar a execução suave da animação de fogo azul, destruição de todas as abas e abertura de uma aba limpa com toast confirmatório.
-   - [ ] Pressionar <kbd>Ctrl+Shift+T</kbd> logo em seguida: nenhuma aba apagada deve ser reaberta.
-
-#### Débitos Técnicos e Melhorias Futuras:
-* Implementar suporte a perfis múltiplos de usuário independentes (ex: Trabalho / Pessoal).
-* Adicionar suporte nativo à instalação de extensões WebExtensions (Chrome Extension API básica).
-* Implementar diálogo nativo customizado para autenticação HTTP Basic/Digest (`app.on('login')`).
-* Adicionar suporte a temas customizados criados livremente pelo usuário via CSS personalizado.
+### ETAPA 5: BARRA DE REDIRECIONAMENTO BLOQUEADO
+* Diagnóstico: Constatou-se que a barra `#redirect-blocked-bar` ficava encoberta pela `WebContentsView` da aba ativa ao navegar na web.
+* Correção mínima e cirúrgica:
+  - `src/renderer/styles/components.css`: Definida altura explícita (`height: 38px; box-sizing: border-box;`) e regra para deslocar o `#find-bar` quando a barra estiver visível.
+  - `src/preload/preload.js` & `src/main/ipc.js`: Adicionado canal seguro `window:set-redirect-bar-open`.
+  - `src/main/window.js`: Adicionada constante `REDIRECT_BAR_HEIGHT = 38` e inclusão no cálculo dinâmico de `updateActiveViewBounds()`.
+  - `src/renderer/components/toolbar.js`: Notificação síncrona no main ao exibir ou ocultar a barra de aviso.
+* Checkpoint Git criado: `checkpoint-etapa-5`.
 
 ---
 
-## 2. RESUMO EXECUTIVO E ARQUITETURA
-
-### 2.1 Stack e Filosofia
-* **Nome Oficial**: Dragon
-* **Tecnologias**: Electron (v33+ / v44+ estável), JavaScript puro (CommonJS no backend e Vanilla JS no frontend), HTML5 e CSS3 Vanilla.
-* **Sem Frameworks ou Build**: O projeto roda diretamente com `npm install` e `npm start`. Não há Webpack, Vite, Babel, TypeScript nem TailwindCSS.
-* **Arquitetura Modular**:
-  * **Main Process (`src/main/`)**: Única fonte da verdade de todo o estado do navegador. Gerencia janelas, sessões de rede, ciclo de vida das abas, privacidade, preferências e atalhos.
-  * **Preload Seguro Geral (`src/preload/preload.js`)**: Ponte estrita via `contextBridge.exposeInMainWorld('browserAPI', ...)`. Isolação total: `contextIsolation: true`, `sandbox: true`, `nodeIntegration: false`.
-  * **Preload Isolado de Configurações (`src/preload/settings-preload.js`)**: Exclusivo para a página interna `pages/settings.html` via `contextBridge.exposeInMainWorld('settingsAPI', ...)`. Sites externos nunca recebem este preload.
-  * **Preload Seguro de Abas e Páginas Internas (`src/preload/tab-preload.js`)**: Expõe APIs restritas para páginas internas (`historyAPI`, `bookmarksAPI`, `downloadsAPI`, `warningAPI`, `certErrorAPI`) sem dependência de módulos de Node.js no renderer.
-  * **IPC Centralizado e Protegido (`src/main/ipc.js`)**: Todos os canais IPC são definidos e validados exclusivamente neste arquivo com verificação estrita de remetente (`isMainSender`, `isSettingsSender`, `isPageSender`).
-  * **Abas com `WebContentsView`**: Sem a tag legada `<webview>`. Cada aba é uma instância isolada de `WebContentsView` anexada à janela principal abaixo da barra superior (`config.TOP_BAR_HEIGHT = 76px`).
+### ETAPA 6: FECHAMENTO E CONSOLIDAÇÃO
+* Suíte completa de testes automatizados com 51 testes passando (`npm test`, 0 falhas).
+* Dossiê `VERIFICACAO_PROJETO.md` integralmente regenerado com todo o código-fonte atualizado.
 
 ---
 
-## 3. ÁRVORE DE ARQUIVOS DO PROJETO
+## 2. CHECKLIST DE TESTES MANUAIS (TEMAS ESCURO E CLARO)
 
-```text
-dragon/
-├── package.json               # Configurações do projeto, scripts (test, start, dist) e electron-builder
-├── .eslintrc.json             # Regras de linting configuradas para Node.js, Electron e Browser Vanilla
-├── README.md                  # Documentação e guia completo da arquitetura
-├── VERIFICACAO_PROJETO.md     # Relatório de conformidade, auditoria e código completo
-├── assets/
-│   ├── blocklists/
-│   │   └── trackers.txt       # Lista completa de rastreadores (Peter Lowe, 3.500+ domínios)
-│   └── icons/
-│       └── favicon-circle.png # Ícone circular oficial do dragão azul
-├── pages/
-│   ├── newtab.html            # Página de início rápida (busca, personalização e atalhos)
-│   ├── newtab.js              # Lógica da nova aba com suporte a temas e buscador
-│   ├── settings.html          # Configurações (Principal, Personalização, Proxy, Permissões e Privacidade)
-│   ├── settings.js            # Lógica de configurações (debounce, proxy, senhas seguras e permissões)
-│   ├── history.html           # Gerenciador de histórico de navegação
-│   ├── history.js             # Lógica de busca e exclusão de itens de histórico
-│   ├── bookmarks.html         # Gerenciador visual de favoritos
-│   ├── bookmarks.js           # Lógica de busca, remoção e abertura de favoritos
-│   ├── downloads.html         # Gerenciador de downloads do navegador
-│   ├── downloads.js           # Lógica de controle de downloads (abrir arquivo, pasta ou cancelar)
-│   ├── error.html             # Página interna exibida em falhas de conexão/rede
-│   ├── error.js               # Lógica da página de erro de rede
-│   ├── https-warning.html     # Aviso de conexão não criptografada com liberação HTTP segura
-│   ├── https-warning.js       # Solicitação de token único para liberação de HTTP
-│   ├── cert-error.html        # Página interna para erros de certificados SSL/TLS
-│   └── cert-error.js          # Lógica da página de erro de certificado digital
-├── test/                      # Testes automatizados com runner nativo do Node.js (node:test)
-│   ├── clear-data.test.js     # Testes de limpeza profunda de dados e fechamento de abas
-│   ├── downloads.test.js      # Testes de identificação de extensões de risco
-│   ├── fingerprint.test.js    # Testes de consistência multivetorial e ruído determinístico
-│   ├── history.test.js        # Testes de histórico, exclusão de internas e updateTitle
-│   ├── navigation.test.js     # Testes de normalização de URLs e atalhos dragon://
-│   ├── permissions.test.js    # Testes de getPermissionKey, rótulos e fila de permissões
-│   ├── privacy.test.js        # Testes de domínios base, trackers, link cleaning e blocklist
-│   ├── settings.test.js       # Testes de validação de esquemas e mescla com defaults
-│   └── tabs.test.js           # Testes de reordenação e manipulação de abas
-└── src/
-    ├── main/                  # Processo Principal (Node.js / Electron)
-    │   ├── main.js            # Ponto de entrada, ciclo de vida e migração de dados
-    │   ├── config.js          # Constantes globais (dimensões, URLs padrão e rotas internas)
-    │   ├── settings.js        # Gerenciamento de configurações, proxy e DPAPI safeStorage
-    │   ├── window.js          # Janela principal, ícone nativo e integração com window-state
-    │   ├── window-state.js    # Persistência de geometria da janela com validação multi-monitor
-    │   ├── tabs.js            # TabManager: abas, popups OAuth, find-in-page e menu de contexto
-    │   ├── context-menu.js    # Menu de contexto nativo com cópia, pesquisa e DevTools
-    │   ├── clear-data.js      # Limpeza profunda de storage, cookies, cache e abas
-    │   ├── privacy.js         # Motor de privacidade: tldts, HTTPS, headers e atualização de blocklist
-    │   ├── navigation.js      # Normalização de URLs, busca e histórico
-    │   ├── history.js         # Persistência de histórico de navegação (history.json)
-    │   ├── bookmarks.js       # Persistência e busca de favoritos (bookmarks.json)
-    │   ├── downloads.js       # Gerenciador de downloads e eventos will-download (downloads.json)
-    │   ├── permissions.js     # Gerenciamento de permissões por site com persistência (permissions.json)
-    │   ├── fingerprint-protection.js # Gerador de proteções contra fingerprinting
-    │   ├── session.js         # Sessão padrão, User-Agent, proxy auth e handlers de permissão
-    │   ├── ipc.js             # Registro centralizado de canais IPC com validação de remetente
-    │   ├── menu.js            # Menu da aplicação e aceleradores globais de teclado
-    │   ├── storage.js         # Persistência atômica de arquivos JSON em app.getPath('userData')
-    │   └── pure/              # Funções puras desacopladas do Electron para testes unitários
-    │       ├── navigation-utils.js # Lógica pura de URLs e busca
-    │       ├── privacy-utils.js    # Lógica pura de domínios e link cleaning
-    │       ├── settings-utils.js   # Lógica pura de validação e defaults
-    │       ├── download-utils.js   # Lógica pura de extensões de risco
-    │       └── fingerprint-utils.js # Lógica pura de fingerprinting determinístico
-    ├── preload/
-    │   ├── preload.js          # Ponte segura para a janela principal (window.browserAPI)
-    │   ├── settings-preload.js # Preload exclusivo para settings.html (window.settingsAPI)
-    │   └── tab-preload.js      # Preload para abas e páginas internas
-    └── renderer/              # Interface Gráfica (HTML / CSS / JS do navegador)
-        ├── index.html         # Estrutura visual da barra superior, escudo, find-bar e modais
-        ├── app.js             # Orquestrador da interface e ouvinte de estado consolidado
-        ├── components/
-        │   ├── addressbar.js       # Barra de endereços, favoritos e omnibox com sugestões
-        │   ├── tabs-view.js        # Abas com DOM diffing por ID e Drag & Drop para reordenação
-        │   ├── toolbar.js          # Botões de navegação, recarregar, downloads e configurações
-        │   ├── find-bar.js         # Barra de busca textual na página (Ctrl+F)
-        │   ├── permission-sheet.js # Modal estilo bottom-sheet para autorização por recurso
-        │   ├── download-risk-sheet.js # Modal de alerta para downloads de arquivos executáveis
-        │   ├── privacy-shield.js   # Escudo com contador dinâmico e painel de exceções
-        │   ├── fire-button.js      # Botão de fogo azul na barra de navegação
-        │   ├── fire-sheet.js       # Painel inferior de confirmação de apagar tudo
-        │   └── fire-animation.js   # Animação WebGL/Canvas do Dragão Azul
-        └── styles/
-            ├── theme.css           # Variáveis CSS de cores, fontes, raios e paleta de fogo
-            ├── base.css            # Reset e regras básicas de layout
-            └── components.css       # Estilos de abas, toolbar, find-bar, omnibox, modais e canvas
-```
+### Popups e Modais da Interface Principal
+- [ ] **Permissões de Câmera/Microfone** (`#permission-sheet`):
+  - [ ] Tema Escuro: Cartão centralizado, ícone 52x52px, foco no botão "Permitir", tecla Esc recusa.
+  - [ ] Tema Claro: Fundo branco, contraste perfeito de texto, sombra suave.
+- [ ] **Aviso de Download de Risco** (`#download-risk-sheet`):
+  - [ ] Tema Escuro: Ícone âmbar/alerta, botão primário "Cancelar e Apagar" focado, botão secundário com texto vermelho.
+  - [ ] Tema Claro: Cartão legível, foco inicial no Cancelar, bordas coerentes.
+- [ ] **Apagar Tudo - Fogo do Dragão Azul** (`#fire-sheet`):
+  - [ ] Tema Escuro: Brilho de fogo azul, checkbox de favoritos em pill centralizada, botão de confirmação em degradê azul/ciano.
+  - [ ] Tema Claro: Contraste de cores ajustado, animação suave sem travamentos.
+- [ ] **Escudo de Privacidade** (`#privacy-shield-popup`):
+  - [ ] Tema Escuro: Nota do site (A/C/F) com cor contextual, toggle switch funcional, lista de rastreadores legível.
+  - [ ] Tema Claro: Fundo elevado claro, bordas sutis.
+- [ ] **Busca na Página** (`#find-bar`):
+  - [ ] Tema Escuro e Claro: Abre no topo direito, ajusta layout sem cobrir texto, desloca suavemente caso a barra de redirecionamento esteja visível.
+- [ ] **Barra de Redirecionamento Bloqueado** (`#redirect-blocked-bar`):
+  - [ ] Ao detectar redirect suspeito, a WebContentsView é empurrada 38px para baixo, tornando a barra 100% visível e clicável.
+
+### Diálogos das Páginas Internas (`pages/dialog.js`)
+- [ ] **Histórico (`dragon://history`)**: Limpar histórico exibe modal estilizado com foco no Cancelar.
+- [ ] **Downloads (`dragon://downloads`)**: Limpar lista exibe mensagem informando que os arquivos no disco são mantidos.
+- [ ] **Favoritos (`dragon://bookmarks`)**: Limpar favoritos exibe confirmação modal acessível.
+- [ ] **Configurações (`dragon://settings`)**: Resetar Fingerprint exibe modal de perigo com botão "Resetar".
+- [ ] **Erro de Certificado (`cert-error.html`)**: "Continuar mesmo assim" exibe modal com botões "Continuar" e "Voltar".
+- [ ] **Aviso HTTPS (`https-warning.html`)**: Falha de autorização exibe `dragonAlert` estilizado.
 
 ---
 
-## 4. CÓDIGO-FONTE COMPLETO DOS ARQUIVOS
+## 3. LISTA DE CORES FIXAS FORA DO THEME.CSS
 
-### 4.1 `package.json`
+Mapeamento de cores estáticas remanescentes para futura unificação completa em tokens:
+1. **Badges de Privacidade no Escudo (Notas)**:
+   - Nota A (Verde): `#22c55e`, `rgba(34, 197, 94, 0.16)`, `rgba(34, 197, 94, 0.45)`
+   - Nota C (Amarelo): `#eab308`, `rgba(234, 179, 8, 0.16)`, `rgba(234, 179, 8, 0.45)`
+   - Nota F (Vermelho): `#ef4444`, `rgba(239, 68, 68, 0.16)`, `rgba(239, 68, 68, 0.45)`
+2. **Ícones de Alerta e Atenção**:
+   - Amarelo/Âmbar no aviso de redirecionamento e HTTPS: `#f59e0b`, `#f5a623`, `#ffb300`
+   - Vermelho de erro de certificado: `#e04545`, `#4a2424`
+3. **Páginas de Erro e Advertência**:
+   - Cores de background estático nas páginas `error.html` e `cert-error.html`: `#18181d`, `#202027`.
+   *(Recomendação futura: criar tokens `--status-success`, `--status-warning`, `--status-error` no `theme.css`)*.
+
+---
+
+## 4. LISTA DE ACHADOS (FORA DO ESCOPO IMEDIATO)
+
+1. **CSP Inline Styles em Páginas Internas**: Algumas páginas internas usam estilos inline para grids rápidos ou ocultação. Uma política de CSP futura mais restrita pode mover esses estilos para classes dedicadas.
+2. **Certificados Autoassinados / Bypass Temporário**: O bypass de certificados inseguros guarda o domínio na sessão em memória até o encerramento do app. Seria útil uma opção visual nas configurações para revogar exceções de certificados TLS manualmente.
+3. **Downloads Simultâneos**: Em conexões muito lentas com múltiplos downloads simultâneos, a atualização da barra de progresso individual pode ser otimizada via debounce no envio IPC.
+
+---
+
+## 5. RESUMO DE COMMITS E CHECKPOINTS
+
+- **Tag `checkpoint-etapa-0`** (`8f54504`): Dossiê base e checkpoint inicial.
+- **Tag `checkpoint-etapa-1`** (`c709023`): Correções de segurança, storage backups, teardown assíncrono de abas, proxy bidirecional e overlay com Set.
+- **Tag `checkpoint-etapa-2`** (`9afc88c`): Tokens semânticos de diálogos e modais no theme.css (dark e light).
+- **Tag `checkpoint-etapa-3`** (`ddc1198`): Padronização visual dos popups, sheets e modais da interface principal.
+- **Tag `checkpoint-etapa-4`** (`038dc95`): Substituição de confirm/alert nativos por modais acessíveis em todas as páginas internas.
+- **Tag `checkpoint-etapa-5`** (`fde3907`): Reserva dinâmica de layout em window.js para a barra de redirecionamento bloqueado.
+
+---
+
+## 6. CÓDIGO-FONTE INTEGRAL DO PROJETO (ARQUIVO POR ARQUIVO)
+
+Abaixo é apresentado o código-fonte de cada arquivo do projeto, sem omissões ou abreviações:
+
+---
+
+### Arquivo: `package.json`
 
 ```json
 {
@@ -292,11 +209,12 @@ dragon/
     }
   }
 }
+
 ```
 
 ---
 
-### 4.2 `.eslintrc.json`
+### Arquivo: `.eslintrc.json`
 
 ```json
 {
@@ -351,11 +269,12 @@ dragon/
     }
   ]
 }
+
 ```
 
 ---
 
-### 4.3 `src/main/config.js`
+### Arquivo: `src/main/config.js`
 
 ```javascript
 // =============================================================================
@@ -408,11 +327,12 @@ module.exports = {
   DOWNLOADS_PAGE_URL,
   WINDOW_DEFAULTS
 };
+
 ```
 
 ---
 
-### 4.4 `src/main/main.js`
+### Arquivo: `src/main/main.js`
 
 ```javascript
 // =============================================================================
@@ -437,16 +357,27 @@ function preserveExistingUserData() {
     const appData = app.getPath('appData');
     const oldUserDataPath = path.join(appData, 'meu-navegador');
     const newUserDataPath = path.join(appData, 'Dragon');
+    const markerFile = path.join(newUserDataPath, '.migrated');
 
-    const shouldMigrate = fs.existsSync(oldUserDataPath) && (
-      !fs.existsSync(newUserDataPath) ||
-      fs.readdirSync(newUserDataPath).length === 0 ||
-      !fs.existsSync(path.join(newUserDataPath, 'Network'))
-    );
+    if (fs.existsSync(markerFile)) {
+      return;
+    }
+
+    if (fs.existsSync(newUserDataPath) && fs.readdirSync(newUserDataPath).length > 0 && fs.existsSync(path.join(newUserDataPath, 'Network'))) {
+      try {
+        fs.writeFileSync(markerFile, new Date().toISOString(), 'utf-8');
+      } catch {}
+      return;
+    }
+
+    const shouldMigrate = fs.existsSync(oldUserDataPath) && !fs.existsSync(markerFile);
 
     if (shouldMigrate) {
       console.log(`[Migração] Copiando dados de ${oldUserDataPath} para ${newUserDataPath}...`);
-      fs.cpSync(oldUserDataPath, newUserDataPath, { recursive: true, errorOnExist: false });
+      fs.cpSync(oldUserDataPath, newUserDataPath, { recursive: true, errorOnExist: false, force: false });
+      try {
+        fs.writeFileSync(markerFile, new Date().toISOString(), 'utf-8');
+      } catch {}
       console.log('[Migração] Dados, cookies, logins e preferências preservados com sucesso em Dragon.');
     }
   } catch (err) {
@@ -643,11 +574,12 @@ if (!gotTheLock) {
     }
   });
 }
+
 ```
 
 ---
 
-### 4.5 `src/main/window.js`
+### Arquivo: `src/main/window.js`
 
 ```javascript
 // =============================================================================
@@ -662,16 +594,19 @@ const windowState = require('./window-state');
 
 let mainWindow = null;
 let tabManagerRef = null;
-let isOverlayActive = false;
+const overlayOwners = new Set();
 let isHtmlFullScreen = false;
 let isFindBarOpen = false;
 const FIND_BAR_HEIGHT = 44;
+let isRedirectBarOpen = false;
+const REDIRECT_BAR_HEIGHT = 38;
 let wasWindowFullScreenBeforeVideo = false;
 
 /**
  * Atualiza as coordenadas e dimensões da WebContentsView da aba ativa.
  * Em modo normal: a interface do navegador ocupa os primeiros config.TOP_BAR_HEIGHT pixels no topo.
- * Se a barra de busca (Ctrl+F) estiver aberta, desloca a visualização para baixo para abrir espaço visível.
+ * Se a barra de busca (Ctrl+F) ou a barra de redirecionamento bloqueado estiverem abertas,
+ * desloca a visualização para baixo para abrir espaço visível.
  * Em modo tela cheia HTML5 (vídeo): a view ocupa a janela inteira a partir do topo (y = 0).
  */
 function updateActiveViewBounds() {
@@ -682,7 +617,8 @@ function updateActiveViewBounds() {
 
   // getContentBounds retorna as dimensões da área útil da janela (descontando bordas do SO)
   const { width, height } = mainWindow.getContentBounds();
-  const topOffset = isHtmlFullScreen ? 0 : (config.TOP_BAR_HEIGHT + (isFindBarOpen ? FIND_BAR_HEIGHT : 0));
+  const extraOffset = (isFindBarOpen ? FIND_BAR_HEIGHT : 0) + (isRedirectBarOpen ? REDIRECT_BAR_HEIGHT : 0);
+  const topOffset = isHtmlFullScreen ? 0 : (config.TOP_BAR_HEIGHT + extraOffset);
   const contentHeight = isHtmlFullScreen ? height : Math.max(0, height - topOffset);
 
   activeTab.view.setBounds({
@@ -708,6 +644,23 @@ function setFindBarOpen(open) {
  */
 function getIsFindBarOpen() {
   return isFindBarOpen;
+}
+
+/**
+ * Define se a barra de aviso de redirecionamento bloqueado está aberta e ajusta a visualização
+ * @param {boolean} open
+ */
+function setRedirectBarOpen(open) {
+  isRedirectBarOpen = Boolean(open);
+  updateActiveViewBounds();
+}
+
+/**
+ * Retorna se a barra de redirecionamento bloqueado está aberta
+ * @returns {boolean}
+ */
+function getIsRedirectBarOpen() {
+  return isRedirectBarOpen;
 }
 
 /**
@@ -756,8 +709,8 @@ function getIsHtmlFullScreen() {
  * da barra superior, chamamos showOverlay() para esconder o site e permitir que o
  * HTML da interface seja visto.
  */
-function showOverlay() {
-  isOverlayActive = true;
+function showOverlay(owner = 'default') {
+  overlayOwners.add(owner);
   if (!tabManagerRef) return;
   const activeTab = tabManagerRef.getActiveTab();
   if (activeTab && activeTab.view) {
@@ -768,14 +721,20 @@ function showOverlay() {
 /**
  * Restaura a visualização da WebContentsView ativa após o fechamento de um menu ou modal.
  */
-function hideOverlay() {
-  isOverlayActive = false;
-  if (!tabManagerRef) return;
-  const activeTab = tabManagerRef.getActiveTab();
-  if (activeTab && activeTab.view) {
-    activeTab.view.setVisible(true);
-    // Garante que o layout esteja ajustado ao tamanho atual da janela
-    updateActiveViewBounds();
+function hideOverlay(owner = 'default') {
+  if (owner === '*') {
+    overlayOwners.clear();
+  } else {
+    overlayOwners.delete(owner);
+  }
+  if (overlayOwners.size === 0) {
+    if (!tabManagerRef) return;
+    const activeTab = tabManagerRef.getActiveTab();
+    if (activeTab && activeTab.view) {
+      activeTab.view.setVisible(true);
+      // Garante que o layout esteja ajustado ao tamanho atual da janela
+      updateActiveViewBounds();
+    }
   }
 }
 
@@ -783,7 +742,7 @@ function hideOverlay() {
  * Retorna se o overlay está ativo no momento
  */
 function getIsOverlayActive() {
-  return isOverlayActive;
+  return overlayOwners.size > 0;
 }
 
 /**
@@ -862,6 +821,8 @@ function init(context) {
     getIsHtmlFullScreen,
     setFindBarOpen,
     getIsFindBarOpen,
+    setRedirectBarOpen,
+    getIsRedirectBarOpen,
     showOverlay,
     hideOverlay,
     getIsOverlayActive,
@@ -881,15 +842,18 @@ module.exports = {
   getIsHtmlFullScreen,
   setFindBarOpen,
   getIsFindBarOpen,
+  setRedirectBarOpen,
+  getIsRedirectBarOpen,
   showOverlay,
   hideOverlay,
   getIsOverlayActive
 };
+
 ```
 
 ---
 
-### 4.6 `src/main/window-state.js`
+### Arquivo: `src/main/window-state.js`
 
 ```javascript
 // =============================================================================
@@ -1007,11 +971,12 @@ module.exports = {
   loadWindowState,
   saveWindowState
 };
+
 ```
 
 ---
 
-### 4.7 `src/main/tabs.js`
+### Arquivo: `src/main/tabs.js`
 
 ```javascript
 // =============================================================================
@@ -1988,7 +1953,7 @@ function closeActiveTab() {
  * sejam totalmente desalocadas da memória durante a animação de chamas.
  * @returns {number} Quantidade de abas fechadas
  */
-function destroyAllTabs() {
+async function destroyAllTabs() {
   const count = tabs.length;
   const tabsToClose = [...tabs];
   tabs = [];
@@ -2001,6 +1966,8 @@ function destroyAllTabs() {
     }
   }
   trackerThrottleMap.clear();
+
+  const closePromises = [];
 
   for (const tab of tabsToClose) {
     if (tab && tab.view) {
@@ -2019,15 +1986,31 @@ function destroyAllTabs() {
             mainWindowRef.contentView.removeChildView(tab.view);
           } catch {}
         }
+
         if (wc && !wc.isDestroyed()) {
-          try {
-            wc.close();
-          } catch {}
+          const p = new Promise((resolve) => {
+            const timer = setTimeout(resolve, 500);
+            wc.once('destroyed', () => {
+              clearTimeout(timer);
+              resolve();
+            });
+            try {
+              wc.close();
+            } catch {
+              clearTimeout(timer);
+              resolve();
+            }
+          });
+          closePromises.push(p);
         }
       } catch (err) {
         console.warn(`[TabManager] Aviso ao destruir aba ${tab.id}:`, err.message);
       }
     }
+  }
+
+  if (closePromises.length > 0) {
+    await Promise.allSettled(closePromises);
   }
 
   // Bloco 2.1: Limpa a pilha de abas fechadas (Ctrl+Shift+T não pode reabrir abas apagadas)
@@ -2334,11 +2317,12 @@ module.exports = {
   reloadAllWebTabs
 };
 
+
 ```
 
 ---
 
-### 4.8 `src/main/context-menu.js`
+### Arquivo: `src/main/context-menu.js`
 
 ```javascript
 // =============================================================================
@@ -2522,11 +2506,12 @@ function attachContextMenu(contents, context) {
 module.exports = {
   attachContextMenu
 };
+
 ```
 
 ---
 
-### 4.9 `src/main/session.js`
+### Arquivo: `src/main/session.js`
 
 ```javascript
 // =============================================================================
@@ -2633,7 +2618,7 @@ function cancelPendingRequestsForWebContents(webContentsId) {
   }
 
   if (pendingPermissionRequests.size === 0 && windowManagerRef) {
-    windowManagerRef.hideOverlay();
+    windowManagerRef.hideOverlay('permission');
   }
 }
 
@@ -2692,7 +2677,7 @@ function respondPermission(requestId, allowed, remember) {
 
   // O overlay só deve ser escondido quando a fila esvaziar por completo
   if (pendingPermissionRequests.size === 0 && windowManagerRef) {
-    windowManagerRef.hideOverlay();
+    windowManagerRef.hideOverlay('permission');
   }
 }
 
@@ -2782,7 +2767,7 @@ function configureSession(ses, isPrivate = false) {
       });
 
       if (windowManagerRef) {
-        windowManagerRef.showOverlay();
+        windowManagerRef.showOverlay('permission');
       }
     } else {
       callback(false);
@@ -2855,6 +2840,10 @@ function init(context) {
   });
 }
 
+function clearPrivatePermissions() {
+  privatePermissions.clear();
+}
+
 module.exports = {
   init,
   configureSession,
@@ -2863,13 +2852,15 @@ module.exports = {
   cancelPendingRequestsForWebContents,
   getPermissionKey,
   getPermissionLabel,
-  ALLOWED_PERMISSIONS
+  ALLOWED_PERMISSIONS,
+  clearPrivatePermissions
 };
+
 ```
 
 ---
 
-### 4.10 `src/main/privacy.js`
+### Arquivo: `src/main/privacy.js`
 
 ```javascript
 // =============================================================================
@@ -3595,11 +3586,12 @@ module.exports = {
   getBaseDomain,
   isSiteExempt
 };
+
 ```
 
 ---
 
-### 4.11 `src/main/settings.js`
+### Arquivo: `src/main/settings.js`
 
 ```javascript
 // =============================================================================
@@ -3723,7 +3715,8 @@ function getAll() {
 function getSettingsPageData() {
   const all = get();
   all.backgroundImageDataUrl = getBackgroundImageDataUrl(all.backgroundImage);
-  all.proxyPassword = getProxyPassword();
+  delete all.proxyAuthPasswordEncrypted;
+  all.hasProxyPassword = Boolean(getProxyPassword());
   return all;
 }
 
@@ -4121,7 +4114,15 @@ async function testProxyConnection(proxyConfig = {}) {
   const testPartition = 'proxy-test-' + Date.now();
   const testSes = session.fromPartition(testPartition);
 
-  const rules = proxyConfig.proxyRules || get('proxyRules') || '';
+  let rules = proxyConfig.proxyRules || '';
+  if (!rules && proxyConfig.host) {
+    const proto = proxyConfig.protocol || 'http';
+    const port = proxyConfig.port ? `:${proxyConfig.port}` : '';
+    rules = `${proto}://${proxyConfig.host}${port}`;
+  }
+  if (!rules) {
+    rules = get('proxyRules') || '';
+  }
   const bypass = proxyConfig.proxyBypass || get('proxyBypass') || '';
 
   if (!rules) {
@@ -4206,11 +4207,12 @@ module.exports = {
   setTabManager,
   resetFingerprint
 };
+
 ```
 
 ---
 
-### 4.12 `src/main/clear-data.js`
+### Arquivo: `src/main/clear-data.js`
 
 ```javascript
 // =============================================================================
@@ -4224,6 +4226,7 @@ const history = require('./history');
 const downloads = require('./downloads');
 const permissions = require('./permissions');
 const bookmarks = require('./bookmarks');
+const sessionModule = require('./session');
 
 /**
  * Lista de tipos de armazenamento suportados pelo Electron
@@ -4277,14 +4280,20 @@ async function clearAllData(context, options = {}) {
   // 1. Fechar e destruir TODAS as abas existentes (libera memória e encerra webContents)
   try {
     if (tabManager && typeof tabManager.destroyAllTabs === 'function') {
-      summary.tabsDestroyed = tabManager.destroyAllTabs();
+      summary.tabsDestroyed = await tabManager.destroyAllTabs();
     }
     if (tabManager && typeof tabManager.clearClosedTabs === 'function') {
       tabManager.clearClosedTabs();
     }
+    if (downloads && typeof downloads.cancelAllActiveDownloads === 'function') {
+      downloads.cancelAllActiveDownloads();
+    }
+    if (sessionModule && typeof sessionModule.clearPrivatePermissions === 'function') {
+      sessionModule.clearPrivatePermissions();
+    }
   } catch (err) {
-    console.error('[ClearData] Erro ao fechar abas:', err);
-    summary.errors.push(`Erro ao fechar abas: ${err.message}`);
+    console.error('[ClearData] Erro ao fechar abas ou cancelar processos:', err);
+    summary.errors.push(`Erro ao fechar abas ou cancelar processos: ${err.message}`);
   }
 
   // 2. Limpar histórico de navegação (zera cache em memória e persiste history.json vazio)
@@ -4430,11 +4439,14 @@ async function clearAllData(context, options = {}) {
     summary.errors.push(`Erro ao limpar dados locais do storage: ${err.message}`);
   }
 
-  // 13. Zerar sessions.json no disco
+  // 13. Zerar sessions.json no disco sem manter backups
   try {
     if (storage && typeof storage.writeJSON === 'function') {
-      storage.writeJSON('sessions.json', { urls: [] });
-      console.log('[ClearData] sessions.json zerado no disco.');
+      storage.writeJSON('sessions.json', { urls: [] }, { noBackup: true });
+      if (typeof storage.removeBackupAndTempFiles === 'function') {
+        storage.removeBackupAndTempFiles('sessions.json');
+      }
+      console.log('[ClearData] sessions.json zerado no disco sem backup.');
     }
   } catch (err) {
     console.warn('[ClearData] Aviso ao zerar sessions.json:', err.message);
@@ -4505,8 +4517,33 @@ async function clearAllData(context, options = {}) {
     summary.errors.push(`Erro ao limpar partições privadas: ${err.message}`);
   }
 
+  // 16. Segunda passada de garantia para limpar storageData e cache residual
+  if (defaultSession) {
+    try {
+      if (typeof defaultSession.clearStorageData === 'function') {
+        await defaultSession.clearStorageData({});
+      }
+    } catch {}
+    try {
+      if (typeof defaultSession.clearCache === 'function') {
+        await defaultSession.clearCache();
+      }
+    } catch {}
+  }
+
   // Define status de sucesso geral (verdadeiro se não houver erros registrados)
   summary.success = summary.errors.length === 0;
+
+  console.log('[ClearData] Resumo da limpeza concluída:', {
+    success: summary.success,
+    tabsDestroyed: summary.tabsDestroyed,
+    historyCleared: summary.historyCleared,
+    downloadsCleared: summary.downloadsCleared,
+    permissionsCleared: summary.permissionsCleared,
+    bookmarksCleared: summary.bookmarksCleared,
+    customPartitionsCleared: summary.customPartitionsCleared,
+    errorsCount: summary.errors.length
+  });
 
   return summary;
 }
@@ -4514,11 +4551,12 @@ async function clearAllData(context, options = {}) {
 module.exports = {
   clearAllData
 };
+
 ```
 
 ---
 
-### 4.13 `src/main/storage.js`
+### Arquivo: `src/main/storage.js`
 
 ```javascript
 // =============================================================================
@@ -4586,7 +4624,7 @@ function readJSON(filename, defaultValue = null) {
  * @param {*} data Dados serializáveis em JSON
  * @returns {boolean} Retorna true se a gravação foi bem-sucedida
  */
-function writeJSON(filename, data) {
+function writeJSON(filename, data, options = {}) {
   try {
     const filePath = path.join(storageDir, filename);
     const tmpPath = `${filePath}.tmp`;
@@ -4596,8 +4634,8 @@ function writeJSON(filename, data) {
     // 1. Grava primeiramente no arquivo temporário .tmp
     fs.writeFileSync(tmpPath, content, 'utf-8');
 
-    // 2. Se o destino atual já existir, preserva no .bak
-    if (fs.existsSync(filePath)) {
+    // 2. Se o destino atual já existir e não for gravação sem backup, preserva no .bak
+    if (fs.existsSync(filePath) && (!options || !options.noBackup)) {
       try {
         fs.copyFileSync(filePath, bakPath);
       } catch {}
@@ -4609,6 +4647,28 @@ function writeJSON(filename, data) {
   } catch (error) {
     console.error(`[Storage] Erro ao gravar atomicamente o arquivo ${filename}:`, error.message);
     return false;
+  }
+}
+
+/**
+ * Remove os arquivos de backup (.bak) e temporários (.tmp) de um arquivo JSON.
+ * Usado na limpeza completa para evitar ressurreição de dados antigos.
+ * @param {string} filename Nome do arquivo (ex: 'history.json')
+ */
+function removeBackupAndTempFiles(filename) {
+  try {
+    const filePath = path.join(storageDir, filename);
+    const bakPath = `${filePath}.bak`;
+    const tmpPath = `${filePath}.tmp`;
+
+    if (fs.existsSync(bakPath)) {
+      fs.unlinkSync(bakPath);
+    }
+    if (fs.existsSync(tmpPath)) {
+      fs.unlinkSync(tmpPath);
+    }
+  } catch (err) {
+    console.warn(`[Storage] Aviso ao remover backups de ${filename}:`, err.message);
   }
 }
 
@@ -4645,14 +4705,16 @@ module.exports = {
   init,
   readJSON,
   writeJSON,
+  removeBackupAndTempFiles,
   clearBrowserData
 };
+
 
 ```
 
 ---
 
-### 4.14 `src/main/navigation.js`
+### Arquivo: `src/main/navigation.js`
 
 ```javascript
 // =============================================================================
@@ -4843,11 +4905,12 @@ module.exports = {
   stop,
   goHome
 };
+
 ```
 
 ---
 
-### 4.15 `src/main/history.js`
+### Arquivo: `src/main/history.js`
 
 ```javascript
 // =============================================================================
@@ -5017,8 +5080,15 @@ function deleteEntry(id) {
  * Limpa todo o histórico de navegação
  */
 function clearAll() {
+  if (persistTimer) {
+    clearTimeout(persistTimer);
+    persistTimer = null;
+  }
   historyCache = [];
-  flushHistorySync();
+  storage.writeJSON(HISTORY_FILENAME, [], { noBackup: true });
+  if (typeof storage.removeBackupAndTempFiles === 'function') {
+    storage.removeBackupAndTempFiles(HISTORY_FILENAME);
+  }
 }
 
 module.exports = {
@@ -5029,11 +5099,12 @@ module.exports = {
   deleteEntry,
   clearAll
 };
+
 ```
 
 ---
 
-### 4.16 `src/main/bookmarks.js`
+### Arquivo: `src/main/bookmarks.js`
 
 ```javascript
 // =============================================================================
@@ -5166,7 +5237,10 @@ function toggleBookmark(item) {
  */
 function clearAll() {
   bookmarksCache = [];
-  persistBookmarks();
+  storage.writeJSON(BOOKMARKS_FILENAME, bookmarksCache, { noBackup: true });
+  if (typeof storage.removeBackupAndTempFiles === 'function') {
+    storage.removeBackupAndTempFiles(BOOKMARKS_FILENAME);
+  }
 }
 
 module.exports = {
@@ -5177,11 +5251,12 @@ module.exports = {
   toggleBookmark,
   clearAll
 };
+
 ```
 
 ---
 
-### 4.17 `src/main/downloads.js`
+### Arquivo: `src/main/downloads.js`
 
 ```javascript
 // =============================================================================
@@ -5317,9 +5392,11 @@ function registerSessionDownloads(ses, isPrivate = false) {
 
     attachDownloadListeners(item, downloadRecord, downloadId, isPrivate);
 
-    // ETAPA 4: Verificação de risco antes de definir savePath
+    // ETAPA 4 / 1.3: Verificação de risco - define savePath de forma síncrona junto com pause()
+    // para evitar que o Electron abra o diálogo nativo "Salvar como" do sistema operacional.
     const isRisky = isRiskyDownload(originalFilename);
     if (isRisky) {
+      item.setSavePath(savePath);
       item.pause();
 
       let originDomain = '';
@@ -5367,7 +5444,6 @@ function confirmRiskDownload(downloadId) {
   }
 
   pendingRiskDownloads.delete(downloadId);
-  entry.item.setSavePath(entry.savePath);
   activeDownloads.set(downloadId, {
     item: entry.item,
     record: entry.downloadRecord,
@@ -5380,7 +5456,7 @@ function confirmRiskDownload(downloadId) {
 }
 
 /**
- * Cancela e descarta o download pausado por risco
+ * Cancela e descarta o download pausado por risco, apagando o arquivo parcial do disco
  * @param {string} downloadId
  * @returns {boolean}
  */
@@ -5390,8 +5466,26 @@ function cancelRiskDownload(downloadId) {
 
   pendingRiskDownloads.delete(downloadId);
   if (entry.item && !entry.item.isDestroyed()) {
-    entry.item.cancel();
+    try {
+      entry.item.cancel();
+    } catch {}
   }
+
+  // Remove arquivo parcial ou marcador .crdownload gerado no disco
+  if (entry.savePath) {
+    try {
+      if (fs.existsSync(entry.savePath)) {
+        fs.unlinkSync(entry.savePath);
+      }
+      const crdownloadPath = `${entry.savePath}.crdownload`;
+      if (fs.existsSync(crdownloadPath)) {
+        fs.unlinkSync(crdownloadPath);
+      }
+    } catch (err) {
+      console.warn('[Downloads] Falha ao remover arquivo parcial cancelado:', err.message);
+    }
+  }
+
   notifyUpdate({ ...entry.downloadRecord, state: 'cancelled' });
   return true;
 }
@@ -5409,6 +5503,47 @@ function cancelDownload(downloadId) {
     return true;
   }
   return false;
+}
+
+/**
+ * Cancela todos os downloads ativos e pendentes, removendo arquivos residuais
+ */
+function cancelAllActiveDownloads() {
+  for (const entry of activeDownloads.values()) {
+    try {
+      if (entry && entry.item && !entry.item.isDestroyed()) {
+        entry.item.cancel();
+      }
+      if (entry && entry.record && entry.record.path) {
+        if (fs.existsSync(entry.record.path)) {
+          fs.unlinkSync(entry.record.path);
+        }
+        const crPath = `${entry.record.path}.crdownload`;
+        if (fs.existsSync(crPath)) {
+          fs.unlinkSync(crPath);
+        }
+      }
+    } catch {}
+  }
+  activeDownloads.clear();
+
+  for (const entry of pendingRiskDownloads.values()) {
+    try {
+      if (entry && entry.item && !entry.item.isDestroyed()) {
+        entry.item.cancel();
+      }
+      if (entry && entry.savePath) {
+        if (fs.existsSync(entry.savePath)) {
+          fs.unlinkSync(entry.savePath);
+        }
+        const crPath = `${entry.savePath}.crdownload`;
+        if (fs.existsSync(crPath)) {
+          fs.unlinkSync(crPath);
+        }
+      }
+    } catch {}
+  }
+  pendingRiskDownloads.clear();
 }
 
 /**
@@ -5453,7 +5588,10 @@ function getDownloads() {
  */
 function clearHistory() {
   downloadsHistory = [];
-  persistHistory();
+  storage.writeJSON(DOWNLOADS_FILENAME, [], { noBackup: true });
+  if (typeof storage.removeBackupAndTempFiles === 'function') {
+    storage.removeBackupAndTempFiles(DOWNLOADS_FILENAME);
+  }
 }
 
 module.exports = {
@@ -5463,16 +5601,18 @@ module.exports = {
   confirmRiskDownload,
   cancelRiskDownload,
   cancelDownload,
+  cancelAllActiveDownloads,
   openFile,
   showInFolder,
   getDownloads,
   clearHistory
 };
+
 ```
 
 ---
 
-### 4.18 `src/main/permissions.js`
+### Arquivo: `src/main/permissions.js`
 
 ```javascript
 // =============================================================================
@@ -5600,7 +5740,10 @@ function revokePermission(origin, permissionKey) {
  */
 function clearAll() {
   permissionsCache = {};
-  persistPermissions();
+  storage.writeJSON(PERMISSIONS_FILENAME, permissionsCache, { noBackup: true });
+  if (typeof storage.removeBackupAndTempFiles === 'function') {
+    storage.removeBackupAndTempFiles(PERMISSIONS_FILENAME);
+  }
 }
 
 module.exports = {
@@ -5611,11 +5754,12 @@ module.exports = {
   clearAll,
   normalizeOrigin
 };
+
 ```
 
 ---
 
-### 4.19 `src/main/fingerprint-protection.js`
+### Arquivo: `src/main/fingerprint-protection.js`
 
 ```javascript
 // =============================================================================
@@ -6043,11 +6187,12 @@ module.exports = {
   getFingerprintOptions,
   validateFingerprintConsistency
 };
+
 ```
 
 ---
 
-### 4.20 `src/main/ipc.js`
+### Arquivo: `src/main/ipc.js`
 
 ```javascript
 // =============================================================================
@@ -6219,6 +6364,17 @@ function init(context) {
     return false;
   });
 
+  // CANAL: window:set-redirect-bar-open
+  // Notifica o windowManager para reservar espaço abaixo da topbar para a barra de redirecionamento bloqueado
+  ipcMain.handle('window:set-redirect-bar-open', (event, open) => {
+    if (!isMainSender(event, mainWindow)) return false;
+    if (windowManager && typeof windowManager.setRedirectBarOpen === 'function') {
+      windowManager.setRedirectBarOpen(Boolean(open));
+      return true;
+    }
+    return false;
+  });
+
   // Notifica o renderer e a aba de configurações sempre que houver alteração
   settings.onChange((key, value, allSettings) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -6230,7 +6386,14 @@ function init(context) {
     }
     // Emite o evento settings:changed em tempo real para abas abertas de configurações
     if (tabManager && typeof tabManager.broadcastToSettingsTabs === 'function') {
-      tabManager.broadcastToSettingsTabs('settings:changed', { key, value, allSettings });
+      const safeAll = { ...allSettings };
+      delete safeAll.proxyAuthPasswordEncrypted;
+      safeAll.hasProxyPassword = Boolean(settings.getProxyPassword());
+      tabManager.broadcastToSettingsTabs('settings:changed', {
+        key,
+        value: key === 'proxyAuthPasswordEncrypted' ? undefined : value,
+        allSettings: safeAll
+      });
     }
   });
 
@@ -6423,9 +6586,9 @@ function init(context) {
   // Finalidade: Oculta a WebContentsView para que menus/modais HTML da interface
   // possam ser exibidos sem ficarem cobertos pela camada do site.
   // ---------------------------------------------------------------------------
-  ipcMain.handle('window:show-overlay', (event) => {
+  ipcMain.handle('window:show-overlay', (event, owner) => {
     if (!isMainSender(event, mainWindow)) return false;
-    windowManager.showOverlay();
+    windowManager.showOverlay(owner || 'default');
     return true;
   });
 
@@ -6433,9 +6596,9 @@ function init(context) {
   // CANAL: window:hide-overlay
   // Finalidade: Restaura a visibilidade da WebContentsView ativa.
   // ---------------------------------------------------------------------------
-  ipcMain.handle('window:hide-overlay', (event) => {
+  ipcMain.handle('window:hide-overlay', (event, owner) => {
     if (!isMainSender(event, mainWindow)) return false;
-    windowManager.hideOverlay();
+    windowManager.hideOverlay(owner || 'default');
     return true;
   });
 
@@ -6486,7 +6649,7 @@ function init(context) {
   ipcMain.handle('app:finish-clear-session', (event) => {
     if (!isMainSender(event, mainWindow)) return { success: false };
     menu.setIsClearing(false);
-    windowManager.hideOverlay();
+    windowManager.hideOverlay('*');
     const newTab = tabManager.createTab(config.NEW_TAB_URL, { active: true });
     if (typeof tabManager.notifyStateChange === 'function') {
       tabManager.notifyStateChange();
@@ -6913,11 +7076,12 @@ function init(context) {
 module.exports = {
   init
 };
+
 ```
 
 ---
 
-### 4.21 `src/main/menu.js`
+### Arquivo: `src/main/menu.js`
 
 ```javascript
 // =============================================================================
@@ -7354,11 +7518,12 @@ module.exports = {
   setIsClearing,
   getIsClearing
 };
+
 ```
 
 ---
 
-### 4.22 `src/main/pure/navigation-utils.js`
+### Arquivo: `src/main/pure/navigation-utils.js`
 
 ```javascript
 // =============================================================================
@@ -7472,11 +7637,12 @@ module.exports = {
   applySearchTemplate,
   normalizeInput
 };
+
 ```
 
 ---
 
-### 4.23 `src/main/pure/privacy-utils.js`
+### Arquivo: `src/main/pure/privacy-utils.js`
 
 ```javascript
 // =============================================================================
@@ -7739,11 +7905,12 @@ module.exports = {
 };
 
 
+
 ```
 
 ---
 
-### 4.24 `src/main/pure/settings-utils.js`
+### Arquivo: `src/main/pure/settings-utils.js`
 
 ```javascript
 // =============================================================================
@@ -7987,17 +8154,66 @@ function mergeWithDefaults(saved) {
   return result;
 }
 
+function convertProxySettingsToUI(settings = {}) {
+  const proxyEnabled = settings.proxyMode === 'manual';
+  let proxyProtocol = 'http';
+  let proxyHost = '';
+  let proxyPort = '';
+
+  const rules = typeof settings.proxyRules === 'string' ? settings.proxyRules.trim() : '';
+  if (rules) {
+    const match = rules.match(/^(?:([a-zA-Z0-9]+):\/\/)?([^:]+)(?::(\d+))?$/);
+    if (match) {
+      proxyProtocol = match[1] || 'http';
+      proxyHost = match[2] || '';
+      proxyPort = match[3] || '';
+    }
+  }
+
+  return {
+    proxyEnabled,
+    proxyProtocol,
+    proxyHost,
+    proxyPort,
+    proxyUsername: typeof settings.proxyAuthUser === 'string' ? settings.proxyAuthUser : '',
+    proxyApplyPrivate: Boolean(settings.applyProxyToPrivateTabs),
+    hasProxyPassword: Boolean(settings.hasProxyPassword)
+  };
+}
+
+function convertProxyUIToSettings(uiData = {}) {
+  const proxyMode = uiData.proxyEnabled ? 'manual' : 'system';
+  const proto = (uiData.proxyProtocol || 'http').trim();
+  const host = (uiData.proxyHost || '').trim();
+  const port = (uiData.proxyPort !== undefined && uiData.proxyPort !== null) ? String(uiData.proxyPort).trim() : '';
+
+  let proxyRules = '';
+  if (host) {
+    proxyRules = port ? `${proto}://${host}:${port}` : `${proto}://${host}`;
+  }
+
+  return {
+    proxyMode,
+    proxyRules,
+    proxyAuthUser: (uiData.proxyUsername || '').trim(),
+    applyProxyToPrivateTabs: Boolean(uiData.proxyApplyPrivate)
+  };
+}
+
 module.exports = {
   DEFAULT_SETTINGS,
   isValidSetting,
   mergeWithDefaults,
-  isValidHttpUrl
+  isValidHttpUrl,
+  convertProxySettingsToUI,
+  convertProxyUIToSettings
 };
+
 ```
 
 ---
 
-### 4.25 `src/main/pure/download-utils.js`
+### Arquivo: `src/main/pure/download-utils.js`
 
 ```javascript
 // =============================================================================
@@ -8052,11 +8268,12 @@ module.exports = {
   RISKY_EXTENSIONS,
   isRiskyDownload
 };
+
 ```
 
 ---
 
-### 4.26 `src/main/pure/fingerprint-utils.js`
+### Arquivo: `src/main/pure/fingerprint-utils.js`
 
 ```javascript
 // =============================================================================
@@ -8669,11 +8886,12 @@ module.exports = {
   pickRandomConsistentPresetWithSeed,
   getFingerprintOptions
 };
+
 ```
 
 ---
 
-### 4.27 `src/preload/preload.js`
+### Arquivo: `src/preload/preload.js`
 
 ```javascript
 // =============================================================================
@@ -8713,6 +8931,7 @@ contextBridge.exposeInMainWorld('browserAPI', {
   findInPage: (text, forward = true, findNext = false) => ipcRenderer.invoke('search:find', { text, forward, findNext }),
   stopFindInPage: (action = 'clearSelection') => ipcRenderer.invoke('search:stop', action),
   setFindBarOpen: (open) => ipcRenderer.invoke('window:set-findbar-open', open),
+  setRedirectBarOpen: (open) => ipcRenderer.invoke('window:set-redirect-bar-open', open),
 
   // --- Sugestões na Barra de Endereço (Omnibox) ---
   getOmniboxSuggestions: (query) => ipcRenderer.invoke('omnibox:suggestions', query),
@@ -8725,8 +8944,8 @@ contextBridge.exposeInMainWorld('browserAPI', {
   respondPermission: (requestId, allowed, remember) => ipcRenderer.invoke('permissions:respond', { requestId, allowed, remember }),
 
   // --- Controle de Camadas / Overlay ---
-  showOverlay: () => ipcRenderer.invoke('window:show-overlay'),
-  hideOverlay: () => ipcRenderer.invoke('window:hide-overlay'),
+  showOverlay: (owner = 'default') => ipcRenderer.invoke('window:show-overlay', owner),
+  hideOverlay: (owner = 'default') => ipcRenderer.invoke('window:hide-overlay', owner),
 
   // --- Apagar Tudo (Fogo do Dragão Azul) ---
   clearAllData: (options) => ipcRenderer.invoke('app:clear-all-data', options),
@@ -8874,11 +9093,12 @@ contextBridge.exposeInMainWorld('browserAPI', {
     };
   }
 });
+
 ```
 
 ---
 
-### 4.28 `src/preload/settings-preload.js`
+### Arquivo: `src/preload/settings-preload.js`
 
 ```javascript
 // =============================================================================
@@ -8991,11 +9211,12 @@ contextBridge.exposeInMainWorld('settingsAPI', {
    */
   validateFingerprint: (config) => ipcRenderer.invoke('fingerprint:validate', config)
 });
+
 ```
 
 ---
 
-### 4.29 `src/preload/tab-preload.js`
+### Arquivo: `src/preload/tab-preload.js`
 
 ```javascript
 // =============================================================================
@@ -9092,11 +9313,12 @@ if (isDownloads) {
     }
   });
 }
+
 ```
 
 ---
 
-### 4.30 `src/renderer/index.html`
+### Arquivo: `src/renderer/index.html`
 
 ```html
 <!DOCTYPE html>
@@ -9407,11 +9629,12 @@ if (isDownloads) {
   <script src="app.js"></script>
 </body>
 </html>
+
 ```
 
 ---
 
-### 4.31 `src/renderer/app.js`
+### Arquivo: `src/renderer/app.js`
 
 ```javascript
 // =============================================================================
@@ -9551,11 +9774,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 });
+
 ```
 
 ---
 
-### 4.32 `src/renderer/styles/theme.css`
+### Arquivo: `src/renderer/styles/theme.css`
 
 ```css
 /* ==========================================================================
@@ -9637,6 +9861,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   --private-tab-bg: #211c2e;
   --private-tab-active-bg: #2d2442;
   --private-icon-color: #b088ff;
+
+  /* --- Diálogos, Modais e Popups (Parte B) --- */
+  --dialog-bg: #23232b;
+  --dialog-border: rgba(255, 255, 255, 0.08);
+  --dialog-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  --dialog-backdrop: rgba(8, 10, 20, 0.62);
+  --danger: #ef4444;
 }
 
 /* --- Suporte ao Tema Claro --- */
@@ -9655,13 +9886,21 @@ body.theme-light {
   --color-border-subtle: #d0d2de;
   --private-tab-bg: #ece6f6;
   --private-tab-active-bg: #ffffff;
+
+  /* --- Diálogos, Modais e Popups (Parte B - Tema Claro) --- */
+  --dialog-bg: #ffffff;
+  --dialog-border: rgba(0, 0, 0, 0.08);
+  --dialog-shadow: 0 24px 60px rgba(20, 24, 40, 0.25);
+  --dialog-backdrop: rgba(30, 34, 50, 0.35);
+  --danger: #ef4444;
 }
+
 
 ```
 
 ---
 
-### 4.33 `src/renderer/styles/base.css`
+### Arquivo: `src/renderer/styles/base.css`
 
 ```css
 /* ==========================================================================
@@ -9722,11 +9961,12 @@ input {
   color: inherit;
   background: transparent;
 }
+
 ```
 
 ---
 
-### 4.34 `src/renderer/styles/components.css`
+### Arquivo: `src/renderer/styles/components.css`
 
 ```css
 /* ==========================================================================
@@ -10976,6 +11216,8 @@ body.html-fullscreen #app {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  height: 38px;
+  box-sizing: border-box;
   background-color: var(--color-bg-secondary, #1e1e24);
   border-bottom: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.08));
   padding: 6px 16px;
@@ -10983,6 +11225,11 @@ body.html-fullscreen #app {
   color: var(--color-text-primary, #ffffff);
   animation: slide-down-banner 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   z-index: 100;
+}
+
+/* Quando o aviso de redirecionamento estiver ativo, desloca a barra de busca para baixo para evitar sobreposição */
+.redirect-blocked-bar.visible ~ #find-bar {
+  top: calc(var(--topbar-height) + 38px);
 }
 
 .redirect-bar-content {
@@ -11124,6 +11371,317 @@ body.html-fullscreen #app {
   color: var(--color-text-primary);
 }
 
+/* =============================================================================
+   15. PARTE B - EMBELEZAMENTO DOS POPUPS E DIÁLOGOS DA INTERFACE
+   ============================================================================= */
+
+/* --- Overlays de Diálogo Centralizados com Efeito Blur --- */
+#permission-sheet-overlay,
+#download-risk-overlay,
+#fire-sheet-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: var(--dialog-backdrop);
+  backdrop-filter: blur(6px) saturate(120%);
+  -webkit-backdrop-filter: blur(6px) saturate(120%);
+  padding: 16px;
+  box-sizing: border-box;
+}
+
+#permission-sheet-overlay.visible,
+#download-risk-overlay.visible,
+#fire-sheet-overlay.visible {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+/* --- Cartão de Diálogo (Permissão, Download de Risco, Apagar Tudo) --- */
+#permission-sheet-panel,
+#download-risk-panel,
+#fire-sheet-panel {
+  position: relative;
+  width: calc(100% - 32px);
+  max-width: 440px;
+  margin: auto;
+  padding: 26px 26px 22px;
+  background-color: var(--dialog-bg);
+  border: 1px solid var(--dialog-border);
+  border-radius: 18px;
+  box-shadow: var(--dialog-shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-sizing: border-box;
+  animation: none;
+  opacity: 0;
+  transform: translateY(10px) scale(0.97);
+  transition: opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1), transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Transição de entrada suave para a posição final */
+#permission-sheet-overlay.visible #permission-sheet-panel,
+#download-risk-overlay.visible #download-risk-panel,
+#fire-sheet-overlay.visible #fire-sheet-panel,
+#fire-sheet-panel.visible {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+/* Suporte à acessibilidade para redução de movimento */
+@media (prefers-reduced-motion: reduce) {
+  #permission-sheet-panel,
+  #download-risk-panel,
+  #fire-sheet-panel {
+    transition: none !important;
+    transform: none !important;
+  }
+}
+
+/* --- Cabeçalho em Coluna e Centralizado --- */
+.perm-header,
+.fire-sheet-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 14px;
+}
+
+.perm-header > div:last-child,
+.fire-sheet-header > div:last-child {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+/* Ícone central 52x52 com raio 16px e svg 26px */
+.perm-icon,
+.fire-sheet-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: none;
+}
+
+.perm-icon svg,
+.fire-sheet-icon svg {
+  width: 26px;
+  height: 26px;
+}
+
+/* Ícone de solicitação de permissão */
+#perm-icon-wrap {
+  background: rgba(77, 124, 255, 0.14);
+  color: var(--color-accent);
+}
+
+/* Ícone de download com risco de execução */
+.perm-icon.risk-warning-icon {
+  background: rgba(239, 68, 68, 0.14) !important;
+  color: var(--danger) !important;
+}
+
+/* Ícone do Dragão Azul (Apagar Tudo) */
+.fire-sheet-icon {
+  background: rgba(1, 148, 255, 0.14);
+  color: var(--fire-mid);
+}
+
+.fire-sheet-icon svg {
+  fill: var(--fire-mid);
+}
+
+/* Título do Diálogo: 17px, peso 650 */
+.perm-title,
+.fire-sheet-title {
+  font-size: 17px;
+  font-weight: 650;
+  color: var(--color-text-primary);
+  margin: 0;
+  text-align: center;
+  line-height: 1.35;
+}
+
+/* Texto descritivo: 13.5px, line-height 1.55, cor secundária */
+.perm-desc,
+.fire-sheet-desc {
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--color-text-secondary);
+  text-align: center;
+  margin: 0;
+}
+
+.risk-highlight {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+/* --- Linha do Checkbox como Pílula Centralizada --- */
+.perm-remember-row,
+.fire-sheet-checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  margin: 0 auto;
+  padding: 8px 16px;
+  background: rgba(127, 127, 127, 0.08);
+  border-radius: 12px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  gap: 8px;
+  user-select: none;
+  transition: background-color var(--transition-fast);
+}
+
+.perm-remember-row:hover,
+.fire-sheet-checkbox-label:hover {
+  background: rgba(127, 127, 127, 0.14);
+}
+
+.perm-remember-row input[type="checkbox"],
+.fire-sheet-checkbox-label input[type="checkbox"] {
+  accent-color: var(--color-accent);
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  margin: 0;
+}
+
+.fire-sheet-options {
+  display: flex;
+  justify-content: center;
+  margin: 0;
+}
+
+/* --- Botões de Ação em Grid de 2 Colunas --- */
+.perm-actions,
+.fire-sheet-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 6px;
+  width: 100%;
+}
+
+.perm-actions button,
+.fire-sheet-actions button {
+  height: 42px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border: none;
+  outline: none;
+  padding: 0 14px;
+  transition: filter var(--transition-fast), background-color var(--transition-fast), color var(--transition-fast);
+  box-sizing: border-box;
+}
+
+.perm-actions button:hover,
+.fire-sheet-actions button:hover {
+  filter: brightness(1.12);
+}
+
+.perm-actions button:focus-visible,
+.fire-sheet-actions button:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* Botões Secundários */
+.btn-perm-block,
+.btn-fire-cancel {
+  background-color: rgba(127, 127, 127, 0.12) !important;
+  color: var(--color-text-primary) !important;
+  border: none !important;
+}
+
+/* Botão Primário (Permitir) */
+.btn-perm-allow {
+  background-color: var(--color-accent) !important;
+  color: #ffffff !important;
+}
+
+/* Download de Risco: Primário = Cancelar download, Secundário = Continuar com texto --danger */
+.btn-risk-cancel {
+  background-color: var(--color-accent) !important;
+  color: #ffffff !important;
+}
+
+.btn-risk-continue {
+  background-color: rgba(127, 127, 127, 0.12) !important;
+  color: var(--danger) !important;
+  border: none !important;
+}
+
+/* Apagar Tudo: Primário com gradiente e glow */
+.btn-fire-confirm {
+  background: linear-gradient(135deg, var(--fire-mid), var(--fire-main)) !important;
+  color: #ffffff !important;
+  box-shadow: 0 4px 14px var(--fire-glow);
+}
+
+/* --- Escudo de Privacidade --- */
+#shield-panel-backdrop {
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  background: var(--dialog-backdrop);
+}
+
+#shield-panel {
+  background-color: var(--dialog-bg);
+  border: 1px solid var(--dialog-border);
+  box-shadow: var(--dialog-shadow);
+  border-radius: 16px;
+}
+
+body.theme-light .shield-panel-header {
+  background-color: rgba(0, 0, 0, 0.03);
+}
+
+/* --- Toast Flutuante --- */
+#fire-toast {
+  background-color: var(--dialog-bg);
+  border: 1px solid var(--dialog-border);
+  box-shadow: var(--dialog-shadow);
+  border-radius: var(--radius-pill);
+  color: var(--color-text-primary);
+}
+
+/* --- Omnibox (Dropdown de Sugestões) --- */
+#omnibox-dropdown {
+  background-color: var(--dialog-bg);
+  border: 1px solid var(--dialog-border);
+  box-shadow: var(--dialog-shadow);
+  border-radius: 16px;
+}
+
+body.theme-light .omnibox-item {
+  border-bottom-color: rgba(0, 0, 0, 0.05);
+}
+
+/* --- Barra de Busca na Página (Ctrl+F) --- */
+#find-bar {
+  background-color: var(--dialog-bg);
+  border: 1px solid var(--dialog-border);
+  border-top: none;
+  box-shadow: var(--dialog-shadow);
+  border-radius: 0 0 14px 14px;
+}
+
+
 
 
 
@@ -11133,7 +11691,7 @@ body.html-fullscreen #app {
 
 ---
 
-### 4.35 `src/renderer/components/tabs-view.js`
+### Arquivo: `src/renderer/components/tabs-view.js`
 
 ```javascript
 // =============================================================================
@@ -11402,11 +11960,12 @@ class TabsViewComponent {
 }
 
 window.TabsViewComponent = TabsViewComponent;
+
 ```
 
 ---
 
-### 4.36 `src/renderer/components/toolbar.js`
+### Arquivo: `src/renderer/components/toolbar.js`
 
 ```javascript
 // =============================================================================
@@ -11537,6 +12096,9 @@ class ToolbarComponent {
       this.redirectBar.hidden = false;
       this.redirectBar.classList.add('visible');
     }
+    if (window.browserAPI && typeof window.browserAPI.setRedirectBarOpen === 'function') {
+      window.browserAPI.setRedirectBarOpen(true);
+    }
     if (this.redirectDismissTimer) {
       clearTimeout(this.redirectDismissTimer);
     }
@@ -11554,6 +12116,9 @@ class ToolbarComponent {
     if (this.redirectBar) {
       this.redirectBar.hidden = true;
       this.redirectBar.classList.remove('visible');
+    }
+    if (window.browserAPI && typeof window.browserAPI.setRedirectBarOpen === 'function') {
+      window.browserAPI.setRedirectBarOpen(false);
     }
   }
 
@@ -11600,11 +12165,12 @@ class ToolbarComponent {
 }
 
 window.ToolbarComponent = ToolbarComponent;
+
 ```
 
 ---
 
-### 4.37 `src/renderer/components/addressbar.js`
+### Arquivo: `src/renderer/components/addressbar.js`
 
 ```javascript
 // =============================================================================
@@ -11890,7 +12456,7 @@ class AddressBarComponent {
     this.updateDropdownPosition();
     this.dropdown.classList.add('visible');
     if (window.browserAPI) {
-      window.browserAPI.showOverlay();
+      window.browserAPI.showOverlay('omnibox');
     }
   }
 
@@ -11900,7 +12466,7 @@ class AddressBarComponent {
     this.suggestions = [];
     this.selectedIndex = -1;
     if (window.browserAPI) {
-      window.browserAPI.hideOverlay();
+      window.browserAPI.hideOverlay('omnibox');
     }
   }
 
@@ -11990,11 +12556,12 @@ class AddressBarComponent {
 }
 
 window.AddressBarComponent = AddressBarComponent;
+
 ```
 
 ---
 
-### 4.38 `src/renderer/components/find-bar.js`
+### Arquivo: `src/renderer/components/find-bar.js`
 
 ```javascript
 // =============================================================================
@@ -12119,11 +12686,12 @@ class FindBarComponent {
 }
 
 window.FindBarComponent = FindBarComponent;
+
 ```
 
 ---
 
-### 4.39 `src/renderer/components/permission-sheet.js`
+### Arquivo: `src/renderer/components/permission-sheet.js`
 
 ```javascript
 // =============================================================================
@@ -12201,6 +12769,10 @@ class PermissionSheetComponent {
       this.rememberCheck.checked = true;
     }
 
+    if (window.browserAPI && typeof window.browserAPI.showOverlay === 'function') {
+      window.browserAPI.showOverlay('permission');
+    }
+
     this.overlay.classList.add('visible');
   }
 
@@ -12248,16 +12820,20 @@ class PermissionSheetComponent {
       if (this.overlay) {
         this.overlay.classList.remove('visible');
       }
+      if (window.browserAPI && typeof window.browserAPI.hideOverlay === 'function') {
+        window.browserAPI.hideOverlay('permission');
+      }
     }
   }
 }
 
 window.PermissionSheetComponent = PermissionSheetComponent;
+
 ```
 
 ---
 
-### 4.40 `src/renderer/components/download-risk-sheet.js`
+### Arquivo: `src/renderer/components/download-risk-sheet.js`
 
 ```javascript
 // =============================================================================
@@ -12325,7 +12901,7 @@ class DownloadRiskSheetComponent {
     }
 
     if (window.browserAPI && typeof window.browserAPI.showOverlay === 'function') {
-      window.browserAPI.showOverlay();
+      window.browserAPI.showOverlay('download-risk');
     }
 
     this.overlay.classList.add('visible');
@@ -12371,17 +12947,18 @@ class DownloadRiskSheetComponent {
       this.overlay.classList.remove('visible');
     }
     if (window.browserAPI && typeof window.browserAPI.hideOverlay === 'function') {
-      window.browserAPI.hideOverlay();
+      window.browserAPI.hideOverlay('download-risk');
     }
   }
 }
 
 window.DownloadRiskSheetComponent = DownloadRiskSheetComponent;
+
 ```
 
 ---
 
-### 4.41 `src/renderer/components/privacy-shield.js`
+### Arquivo: `src/renderer/components/privacy-shield.js`
 
 ```javascript
 // =============================================================================
@@ -12467,7 +13044,7 @@ class PrivacyShieldComponent {
     this.isOpen = true;
 
     if (window.browserAPI && typeof window.browserAPI.showOverlay === 'function') {
-      window.browserAPI.showOverlay();
+      window.browserAPI.showOverlay('shield');
     }
 
     if (this.backdrop) this.backdrop.classList.add('visible');
@@ -12487,7 +13064,7 @@ class PrivacyShieldComponent {
     if (this.panel) this.panel.classList.remove('visible');
 
     if (window.browserAPI && typeof window.browserAPI.hideOverlay === 'function') {
-      window.browserAPI.hideOverlay();
+      window.browserAPI.hideOverlay('shield');
     }
   }
 
@@ -12632,11 +13209,12 @@ class PrivacyShieldComponent {
 
 // Exporta globalmente para uso no app.js sem dependência de bundler
 window.PrivacyShieldComponent = PrivacyShieldComponent;
+
 ```
 
 ---
 
-### 4.42 `src/renderer/components/fire-button.js`
+### Arquivo: `src/renderer/components/fire-button.js`
 
 ```javascript
 // =============================================================================
@@ -12708,11 +13286,12 @@ class FireButtonComponent {
 
 // Exporta globalmente para uso no app.js sem dependência de bundler
 window.FireButtonComponent = FireButtonComponent;
+
 ```
 
 ---
 
-### 4.43 `src/renderer/components/fire-sheet.js`
+### Arquivo: `src/renderer/components/fire-sheet.js`
 
 ```javascript
 // =============================================================================
@@ -12781,7 +13360,7 @@ class FireSheetComponent {
 
     // Notifica o main process para esconder a WebContentsView da aba ativa
     if (window.browserAPI && typeof window.browserAPI.showOverlay === 'function') {
-      window.browserAPI.showOverlay();
+      window.browserAPI.showOverlay('fire-sheet');
     }
 
     if (this.overlay) {
@@ -12812,7 +13391,7 @@ class FireSheetComponent {
 
     // Restaura a visualização da página web
     if (window.browserAPI && typeof window.browserAPI.hideOverlay === 'function') {
-      window.browserAPI.hideOverlay();
+      window.browserAPI.hideOverlay('fire-sheet');
     }
   }
 
@@ -12842,11 +13421,12 @@ class FireSheetComponent {
 
 // Exporta globalmente para uso no app.js sem dependência de bundler
 window.FireSheetComponent = FireSheetComponent;
+
 ```
 
 ---
 
-### 4.44 `src/renderer/components/fire-animation.js`
+### Arquivo: `src/renderer/components/fire-animation.js`
 
 ```javascript
 // =============================================================================
@@ -13320,6 +13900,7 @@ class FireAnimationComponent {
 
     // 2. Dispara a limpeza assíncrona no processo principal
     let cleanDone = false;
+    this.cleanTimedOut = false;
     const cleanPromise = (window.browserAPI && typeof window.browserAPI.clearAllData === 'function')
       ? window.browserAPI.clearAllData(options)
       : Promise.resolve({ success: true, errors: [] });
@@ -13336,7 +13917,13 @@ class FireAnimationComponent {
       });
 
     // Timeout de segurança para evitar trava caso o main process demore
-    setTimeout(() => { cleanDone = true; }, 10000);
+    if (this.cleanTimeoutId) clearTimeout(this.cleanTimeoutId);
+    this.cleanTimeoutId = setTimeout(() => {
+      if (!cleanDone) {
+        this.cleanTimedOut = true;
+        cleanDone = true;
+      }
+    }, 10000);
 
     // 3. Acessibilidade: prefers-reduced-motion
     const prefersReducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -13644,43 +14231,51 @@ class FireAnimationComponent {
       cancelAnimationFrame(this.animationFrameId);
       this.animationFrameId = null;
     }
-
-    this.isRunning = false;
-
-    if (this.centerBadge) {
-      this.centerBadge.classList.remove('visible');
+    if (this.cleanTimeoutId) {
+      clearTimeout(this.cleanTimeoutId);
+      this.cleanTimeoutId = null;
     }
 
-    if (this.canvas) {
-      this.canvas.style.display = 'none';
-      if (this.ctx) {
-        this.ctx.clearRect(0, 0, this.width, this.height);
+    try {
+      if (this.centerBadge) {
+        this.centerBadge.classList.remove('visible');
       }
-    }
 
-    // 1. Invoca no main process para abrir UMA aba limpa ativa e fechar o overlay
-    if (window.browserAPI && typeof window.browserAPI.finishClearSession === 'function') {
-      try {
-        await window.browserAPI.finishClearSession();
-      } catch (err) {
-        console.warn('[FireAnimation] Aviso ao finalizar sessão limpa:', err);
+      if (this.canvas) {
+        this.canvas.style.display = 'none';
+        if (this.ctx) {
+          this.ctx.clearRect(0, 0, this.width, this.height);
+        }
       }
-    }
 
-    // 2. Remove o bloqueio de cliques na interface
-    document.body.classList.remove('ui-locked');
+      // 1. Invoca no main process para abrir UMA aba limpa ativa e fechar o overlay
+      if (window.browserAPI && typeof window.browserAPI.finishClearSession === 'function') {
+        try {
+          await window.browserAPI.finishClearSession();
+        } catch (err) {
+          console.warn('[FireAnimation] Aviso ao finalizar sessão limpa:', err);
+        }
+      }
 
-    // 3. Exibe o Toast informativo: se houver falhas exibe aviso, caso contrário confirmação
-    const result = this.lastCleanResult;
-    const hasErrors = !result || result.success === false || (Array.isArray(result.errors) && result.errors.length > 0);
-    if (hasErrors) {
-      this.showToast('Alguns dados não puderam ser apagados', true);
-    } else {
-      this.showToast('Abas e dados apagados', false);
-    }
+      // 2. Exibe o Toast informativo: se houve timeout, falhas ou confirmação
+      if (this.cleanTimedOut) {
+        this.showToast('A limpeza ainda pode estar em andamento no sistema', true);
+      } else {
+        const result = this.lastCleanResult;
+        const hasErrors = !result || result.success === false || (Array.isArray(result.errors) && result.errors.length > 0);
+        if (hasErrors) {
+          this.showToast('Alguns dados não puderam ser apagados', true);
+        } else {
+          this.showToast('Abas e dados apagados', false);
+        }
+      }
 
-    if (typeof onComplete === 'function') {
-      onComplete();
+      if (typeof onComplete === 'function') {
+        onComplete();
+      }
+    } finally {
+      this.isRunning = false;
+      document.body.classList.remove('ui-locked');
     }
   }
 
@@ -13716,11 +14311,449 @@ class FireAnimationComponent {
 
 // Exporta globalmente para uso no app.js sem dependência de bundler
 window.FireAnimationComponent = FireAnimationComponent;
+
 ```
 
 ---
 
-### 4.45 `pages/settings.html`
+### Arquivo: `pages/dialog.css`
+
+```css
+/* =============================================================================
+   pages/dialog.css
+   Estilos unificados para os diálogos modais das páginas internas (dragonConfirm & dragonAlert)
+   Compatível com temas escuro e claro, com fallbacks integrados
+   ============================================================================= */
+
+.dg-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: var(--dialog-backdrop, rgba(8, 10, 20, 0.62));
+  backdrop-filter: blur(6px) saturate(120%);
+  -webkit-backdrop-filter: blur(6px) saturate(120%);
+  z-index: 99999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  box-sizing: border-box;
+  opacity: 0;
+  transition: opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.dg-overlay.dg-visible {
+  opacity: 1;
+}
+
+/* --- Cartão Centralizado --- */
+.dg-card {
+  position: relative;
+  width: calc(100% - 32px);
+  max-width: 440px;
+  margin: auto;
+  padding: 26px 26px 22px;
+  background-color: var(--dialog-bg, #23232b);
+  border: 1px solid var(--dialog-border, rgba(255, 255, 255, 0.08));
+  border-radius: 18px;
+  box-shadow: var(--dialog-shadow, 0 24px 60px rgba(0, 0, 0, 0.55));
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-sizing: border-box;
+  outline: none;
+  opacity: 0;
+  transform: translateY(10px) scale(0.97);
+  transition: opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1), transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.dg-overlay.dg-visible .dg-card {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dg-overlay,
+  .dg-card {
+    transition: none !important;
+    transform: none !important;
+  }
+}
+
+/* --- Cabeçalho Centralizado --- */
+.dg-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 14px;
+}
+
+/* Ícone central 52x52, raio 16px, svg 26px */
+.dg-icon-wrap {
+  width: 52px;
+  height: 52px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background-color: rgba(77, 124, 255, 0.14);
+  color: var(--color-accent, #4d7cff);
+}
+
+.dg-icon-wrap.dg-icon-danger {
+  background-color: rgba(239, 68, 68, 0.14);
+  color: var(--danger, #ef4444);
+}
+
+.dg-icon-wrap svg {
+  width: 26px;
+  height: 26px;
+  fill: currentColor;
+}
+
+/* Título: 17px, peso 650 */
+.dg-title {
+  font-size: 17px;
+  font-weight: 650;
+  color: var(--color-text-primary, #f0f0f5);
+  margin: 0;
+  text-align: center;
+  line-height: 1.35;
+}
+
+/* Texto: 13.5px, line-height 1.55, cor secundária */
+.dg-message {
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--color-text-secondary, #9e9ea8);
+  text-align: center;
+  margin: 0;
+  white-space: pre-line;
+  word-break: break-word;
+}
+
+/* --- Botões em Grid de 2 Colunas --- */
+.dg-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 6px;
+  width: 100%;
+}
+
+.dg-actions.dg-actions-single {
+  grid-template-columns: 1fr;
+}
+
+.dg-btn {
+  height: 42px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border: none;
+  outline: none;
+  padding: 0 16px;
+  box-sizing: border-box;
+  transition: filter 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+  user-select: none;
+}
+
+.dg-btn:hover {
+  filter: brightness(1.12);
+}
+
+.dg-btn:focus-visible {
+  outline: 2px solid var(--color-accent, #4d7cff);
+  outline-offset: 2px;
+}
+
+/* Secundário: fundo rgba(127,127,127,0.12) */
+.dg-btn-secondary {
+  background-color: rgba(127, 127, 127, 0.12);
+  color: var(--color-text-primary, #f0f0f5);
+}
+
+/* Primário Padrão: cor de destaque, texto branco */
+.dg-btn-primary {
+  background-color: var(--color-accent, #4d7cff);
+  color: #ffffff;
+}
+
+/* Primário Perigo: cor --danger */
+.dg-btn-danger {
+  background-color: var(--danger, #ef4444) !important;
+  color: #ffffff !important;
+}
+
+.dg-btn-danger:focus-visible {
+  outline-color: var(--danger, #ef4444);
+}
+
+```
+
+---
+
+### Arquivo: `pages/dialog.js`
+
+```javascript
+// =============================================================================
+// pages/dialog.js
+// Diálogos modais elegantes para as páginas internas (dragonConfirm & dragonAlert)
+// Substitui window.confirm() e window.alert() nativos com segurança e acessibilidade
+// =============================================================================
+
+(function (global) {
+  'use strict';
+
+  /**
+   * Normaliza os parâmetros recebidos para dragonConfirm e dragonAlert
+   * @param {string|object} options
+   * @param {boolean} [isAlert=false]
+   * @returns {object}
+   */
+  function normalizeDialogOptions(options, isAlert = false) {
+    if (typeof options === 'string') {
+      return {
+        title: isAlert ? 'Aviso' : 'Confirmação',
+        message: options,
+        confirmText: isAlert ? 'OK' : 'Confirmar',
+        cancelText: 'Cancelar',
+        danger: false
+      };
+    }
+
+    const opts = options || {};
+    return {
+      title: typeof opts.title === 'string' ? opts.title : (isAlert ? 'Aviso' : 'Confirmação'),
+      message: typeof opts.message === 'string' ? opts.message : '',
+      confirmText: typeof opts.confirmText === 'string' ? opts.confirmText : (isAlert ? 'OK' : 'Confirmar'),
+      cancelText: typeof opts.cancelText === 'string' ? opts.cancelText : 'Cancelar',
+      danger: Boolean(opts.danger)
+    };
+  }
+
+  /**
+   * Cria o elemento SVG do ícone central (segurança contra XSS via DOM API)
+   * @param {boolean} isDanger
+   * @returns {SVGElement}
+   */
+  function createDialogIconSvg(isDanger) {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 16 16');
+
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    if (isDanger) {
+      // Ícone de triângulo de aviso / perigo
+      path.setAttribute('d', 'M8.982 1.566a1.13 1.13 0 0 0-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767L8.982 1.566zM8 5c.535 0 .954.462.9.995l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 5.995A.905.905 0 0 1 8 5zm.002 6a1 1 0 1 1 0 2 1 1 0 0 1 0-2z');
+    } else {
+      // Ícone de escudo de proteção / informação
+      path.setAttribute('d', 'M8 0c-.26 0-.51.1-.7.29L2.24 5.35c-.15.15-.24.36-.24.58v4.57c0 3.2 2.37 5.09 5.76 5.48.16.02.32.02.48 0 3.39-.39 5.76-2.28 5.76-5.48V5.93c0-.22-.09-.43-.24-.58L8.7 0.29C8.51 0.1 8.26 0 8 0zm0 1.5l4.5 4.5v4.5c0 2.4-1.7 3.8-4.5 4.19-2.8-.39-4.5-1.79-4.5-4.19V6l4.5-4.5z');
+    }
+
+    svg.appendChild(path);
+    return svg;
+  }
+
+  /**
+   * Constrói e exibe o modal acessível na página
+   * @param {object} opts
+   * @param {boolean} isAlert
+   * @returns {Promise<boolean>}
+   */
+  function showModalDialog(opts, isAlert) {
+    return new Promise((resolve) => {
+      const previousActiveElement = document.activeElement;
+
+      // 1. Overlay de fundo
+      const overlay = document.createElement('div');
+      overlay.className = 'dg-overlay';
+
+      // 2. Cartão de diálogo
+      const card = document.createElement('div');
+      card.className = 'dg-card';
+      card.setAttribute('role', opts.danger || isAlert ? 'alertdialog' : 'dialog');
+      card.setAttribute('aria-modal', 'true');
+      card.tabIndex = -1;
+
+      // 3. Cabeçalho
+      const header = document.createElement('div');
+      header.className = 'dg-header';
+
+      // Ícone
+      const iconWrap = document.createElement('div');
+      iconWrap.className = 'dg-icon-wrap' + (opts.danger ? ' dg-icon-danger' : '');
+      iconWrap.appendChild(createDialogIconSvg(opts.danger));
+      header.appendChild(iconWrap);
+
+      // Título
+      const titleEl = document.createElement('h2');
+      titleEl.className = 'dg-title';
+      titleEl.textContent = opts.title;
+      header.appendChild(titleEl);
+      card.setAttribute('aria-label', opts.title);
+
+      // Mensagem
+      if (opts.message) {
+        const messageEl = document.createElement('p');
+        messageEl.className = 'dg-message';
+        messageEl.textContent = opts.message;
+        header.appendChild(messageEl);
+      }
+
+      card.appendChild(header);
+
+      // 4. Ações / Botões
+      const actions = document.createElement('div');
+      actions.className = 'dg-actions' + (isAlert ? ' dg-actions-single' : '');
+
+      let cancelBtn = null;
+      let confirmBtn = null;
+
+      function closeDialog(result) {
+        document.removeEventListener('keydown', handleKeydown, true);
+        overlay.classList.remove('dg-visible');
+
+        setTimeout(() => {
+          if (overlay.parentNode) {
+            overlay.parentNode.removeChild(overlay);
+          }
+          if (previousActiveElement && typeof previousActiveElement.focus === 'function') {
+            try {
+              previousActiveElement.focus();
+            } catch {}
+          }
+          resolve(result);
+        }, 220);
+      }
+
+      // Se for Confirm, renderiza botão Cancelar
+      if (!isAlert) {
+        cancelBtn = document.createElement('button');
+        cancelBtn.type = 'button';
+        cancelBtn.className = 'dg-btn dg-btn-secondary';
+        cancelBtn.textContent = opts.cancelText;
+        cancelBtn.addEventListener('click', () => closeDialog(false));
+        actions.appendChild(cancelBtn);
+      }
+
+      // Botão Confirmar ou OK
+      confirmBtn = document.createElement('button');
+      confirmBtn.type = 'button';
+      confirmBtn.className = 'dg-btn ' + (opts.danger ? 'dg-btn-danger' : 'dg-btn-primary');
+      confirmBtn.textContent = opts.confirmText;
+      confirmBtn.addEventListener('click', () => closeDialog(true));
+      actions.appendChild(confirmBtn);
+
+      card.appendChild(actions);
+      overlay.appendChild(card);
+
+      // Clique no fundo fecha com cancelamento
+      overlay.addEventListener('click', (event) => {
+        if (event.target === overlay) {
+          closeDialog(false);
+        }
+      });
+
+      // Gerenciamento de teclado: Esc cancela e Tab circula o foco estritamente dentro do diálogo
+      const focusableButtons = isAlert ? [confirmBtn] : [cancelBtn, confirmBtn];
+
+      function handleKeydown(event) {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          event.stopPropagation();
+          closeDialog(false);
+          return;
+        }
+
+        if (event.key === 'Tab') {
+          if (focusableButtons.length <= 1) {
+            event.preventDefault();
+            return;
+          }
+
+          const first = focusableButtons[0];
+          const last = focusableButtons[focusableButtons.length - 1];
+
+          if (event.shiftKey) {
+            if (document.activeElement === first) {
+              event.preventDefault();
+              last.focus();
+            }
+          } else {
+            if (document.activeElement === last) {
+              event.preventDefault();
+              first.focus();
+            }
+          }
+        }
+      }
+
+      document.addEventListener('keydown', handleKeydown, true);
+
+      // Anexa ao body e dispara a animação de entrada
+      document.body.appendChild(overlay);
+
+      // Força reflow para animação fluida
+      void overlay.offsetWidth;
+      overlay.classList.add('dg-visible');
+
+      // Foco inicial: quando perigoso, foca em Cancelar; caso contrário, no botão primário
+      requestAnimationFrame(() => {
+        if (opts.danger && cancelBtn) {
+          cancelBtn.focus();
+        } else if (confirmBtn) {
+          confirmBtn.focus();
+        }
+      });
+    });
+  }
+
+  /**
+   * Diálogo de confirmação com Promessa booleana
+   * @param {string|object} options
+   * @returns {Promise<boolean>}
+   */
+  function dragonConfirm(options) {
+    const opts = normalizeDialogOptions(options, false);
+    return showModalDialog(opts, false);
+  }
+
+  /**
+   * Diálogo de alerta com Promessa resolvida ao fechar
+   * @param {string|object} options
+   * @returns {Promise<void>}
+   */
+  async function dragonAlert(options) {
+    const opts = normalizeDialogOptions(options, true);
+    await showModalDialog(opts, true);
+  }
+
+  // Exportação no escopo global (Browser / Window)
+  if (typeof global !== 'undefined') {
+    global.dragonConfirm = dragonConfirm;
+    global.dragonAlert = dragonAlert;
+  }
+
+  // Exportação para testes unitários em Node.js
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = {
+      normalizeDialogOptions,
+      dragonConfirm,
+      dragonAlert
+    };
+  }
+})(typeof window !== 'undefined' ? window : this);
+
+```
+
+---
+
+### Arquivo: `pages/settings.html`
 
 ```html
 <!DOCTYPE html>
@@ -13732,6 +14765,7 @@ window.FireAnimationComponent = FireAnimationComponent;
   <title>Configurações - Dragon</title>
   <!-- Carrega variáveis e tokens visuais do tema do Dragon -->
   <link rel="stylesheet" href="../src/renderer/styles/theme.css">
+  <link rel="stylesheet" href="dialog.css">
   <style>
     *, *::before, *::after {
       box-sizing: border-box;
@@ -15117,14 +16151,16 @@ window.FireAnimationComponent = FireAnimationComponent;
   <!-- =========================================================================
        SCRIPT DO LADO DO CLIENTE (CONSUMIDOR DE window.settingsAPI)
        ========================================================================= -->
+  <script src="dialog.js"></script>
   <script src="settings.js"></script>
 </body>
 </html>
+
 ```
 
 ---
 
-### 4.46 `pages/settings.js`
+### Arquivo: `pages/settings.js`
 
 ```javascript
 // =============================================================================
@@ -15550,16 +16586,34 @@ async function loadSettings() {
     setCheckedIfNotFocused(toggleShortcuts, s.showShortcuts !== false);
 
     // Seção Proxy
+    const isProxyManual = s.proxyMode === 'manual' || Boolean(s.proxyEnabled);
     if (toggleProxyEnabled) {
-      setCheckedIfNotFocused(toggleProxyEnabled, Boolean(s.proxyEnabled));
-      if (proxyFields) proxyFields.style.display = s.proxyEnabled ? 'flex' : 'none';
+      setCheckedIfNotFocused(toggleProxyEnabled, isProxyManual);
+      if (proxyFields) proxyFields.style.display = isProxyManual ? 'flex' : 'none';
     }
-    setValIfNotFocused(selectProxyProtocol, s.proxyProtocol || 'http');
-    setValIfNotFocused(inputProxyHost, s.proxyHost || '');
-    setValIfNotFocused(inputProxyPort, s.proxyPort || '');
-    setValIfNotFocused(inputProxyUsername, s.proxyUsername || '');
+
+    let proto = 'http';
+    let host = '';
+    let port = '';
+    if (s.proxyRules) {
+      const match = s.proxyRules.match(/^(?:([a-zA-Z0-9]+):\/\/)?([^:]+)(?::(\d+))?$/);
+      if (match) {
+        proto = match[1] || 'http';
+        host = match[2] || '';
+        port = match[3] || '';
+      }
+    } else {
+      proto = s.proxyProtocol || 'http';
+      host = s.proxyHost || '';
+      port = s.proxyPort || '';
+    }
+
+    setValIfNotFocused(selectProxyProtocol, proto);
+    setValIfNotFocused(inputProxyHost, host);
+    setValIfNotFocused(inputProxyPort, port);
+    setValIfNotFocused(inputProxyUsername, s.proxyAuthUser || s.proxyUsername || '');
     setValIfNotFocused(inputProxyPassword, s.hasProxyPassword ? '••••••••' : '');
-    setCheckedIfNotFocused(toggleProxyApplyPrivate, Boolean(s.proxyApplyPrivate));
+    setCheckedIfNotFocused(toggleProxyApplyPrivate, s.applyProxyToPrivateTabs !== undefined ? Boolean(s.applyProxyToPrivateTabs) : Boolean(s.proxyApplyPrivate));
 
     // Seção Privacidade Avançada (Fingerprinting Multivetorial)
     if (toggleFpEnabled) {
@@ -15763,41 +16817,59 @@ function initEvents() {
   }
 
   // Controles de Proxy
+  function syncProxyRules() {
+    const proto = selectProxyProtocol ? selectProxyProtocol.value : 'http';
+    const host = inputProxyHost ? inputProxyHost.value.trim() : '';
+    const port = inputProxyPort ? inputProxyPort.value.trim() : '';
+    let rules = '';
+    if (host) {
+      rules = port ? `${proto}://${host}:${port}` : `${proto}://${host}`;
+    }
+    window.settingsAPI.setSetting('proxyRules', rules);
+  }
+
+  const debouncedSyncRules = debounce(syncProxyRules, 300);
+
   if (toggleProxyEnabled) {
     toggleProxyEnabled.addEventListener('change', () => {
       const enabled = toggleProxyEnabled.checked;
       if (proxyFields) proxyFields.style.display = enabled ? 'flex' : 'none';
-      window.settingsAPI.setSetting('proxyEnabled', enabled);
+      window.settingsAPI.setSetting('proxyMode', enabled ? 'manual' : 'system');
+      if (enabled) {
+        syncProxyRules();
+      }
     });
   }
 
   if (selectProxyProtocol) {
     selectProxyProtocol.addEventListener('change', () => {
-      window.settingsAPI.setSetting('proxyProtocol', selectProxyProtocol.value);
+      syncProxyRules();
     });
   }
 
   if (inputProxyHost) {
     inputProxyHost.addEventListener('input', () => {
-      debouncedSet('proxyHost', inputProxyHost.value.trim());
+      debouncedSyncRules();
     });
   }
 
   if (inputProxyPort) {
     inputProxyPort.addEventListener('input', () => {
-      debouncedSet('proxyPort', inputProxyPort.value.trim());
+      debouncedSyncRules();
     });
   }
 
   if (inputProxyUsername) {
     inputProxyUsername.addEventListener('input', () => {
-      debouncedSet('proxyUsername', inputProxyUsername.value.trim());
+      debouncedSet('proxyAuthUser', inputProxyUsername.value.trim());
     });
   }
 
   if (inputProxyPassword) {
     const debouncedPass = debounce((pass) => {
-      window.settingsAPI.setProxyPassword(pass);
+      if (pass !== '••••••••') {
+        window.settingsAPI.setProxyPassword(pass);
+      }
     }, 400);
 
     inputProxyPassword.addEventListener('input', () => {
@@ -15807,7 +16879,7 @@ function initEvents() {
 
   if (toggleProxyApplyPrivate) {
     toggleProxyApplyPrivate.addEventListener('change', () => {
-      window.settingsAPI.setSetting('proxyApplyPrivate', toggleProxyApplyPrivate.checked);
+      window.settingsAPI.setSetting('applyProxyToPrivateTabs', toggleProxyApplyPrivate.checked);
     });
   }
 
@@ -15857,9 +16929,17 @@ function initEvents() {
   // Botão "Resetar Fingerprint"
   if (btnResetFingerprint) {
     btnResetFingerprint.addEventListener('click', async () => {
-      const confirmReset = window.confirm(
-        'Isso vai gerar uma nova identidade de fingerprint aleatória e consistente. Todas as abas abertas serão recarregadas. Deseja continuar?'
-      );
+      const confirmReset = window.dragonConfirm
+        ? await window.dragonConfirm({
+            title: 'Resetar Fingerprint',
+            message: 'Isso vai gerar uma nova identidade de fingerprint aleatória e consistente. Todas as abas abertas serão recarregadas. Deseja continuar?',
+            confirmText: 'Resetar',
+            cancelText: 'Cancelar',
+            danger: true
+          })
+        : window.confirm(
+            'Isso vai gerar uma nova identidade de fingerprint aleatória e consistente. Todas as abas abertas serão recarregadas. Deseja continuar?'
+          );
       if (!confirmReset) return;
 
       try {
@@ -16055,11 +17135,12 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 });
+
 ```
 
 ---
 
-### 4.47 `pages/newtab.html`
+### Arquivo: `pages/newtab.html`
 
 ```html
 <!DOCTYPE html>
@@ -16368,11 +17449,12 @@ document.addEventListener('DOMContentLoaded', () => {
   <script src="newtab.js"></script>
 </body>
 </html>
+
 ```
 
 ---
 
-### 4.48 `pages/newtab.js`
+### Arquivo: `pages/newtab.js`
 
 ```javascript
 // =============================================================================
@@ -16508,11 +17590,12 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 });
+
 ```
 
 ---
 
-### 4.49 `pages/history.html`
+### Arquivo: `pages/history.html`
 
 ```html
 <!DOCTYPE html>
@@ -16523,6 +17606,7 @@ document.addEventListener('DOMContentLoaded', () => {
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;">
   <title>Histórico - Dragon</title>
   <link rel="stylesheet" href="../src/renderer/styles/theme.css">
+  <link rel="stylesheet" href="dialog.css">
   <style>
     *, *::before, *::after {
       box-sizing: border-box;
@@ -16767,14 +17851,16 @@ document.addEventListener('DOMContentLoaded', () => {
     </div>
   </main>
 
+  <script src="dialog.js"></script>
   <script src="history.js"></script>
 </body>
 </html>
+
 ```
 
 ---
 
-### 4.50 `pages/history.js`
+### Arquivo: `pages/history.js`
 
 ```javascript
 // =============================================================================
@@ -16890,21 +17976,29 @@ if (inputSearch) {
 
 if (btnClearAll) {
   btnClearAll.addEventListener('click', async () => {
-    if (confirm('Deseja limpar todo o histórico de navegação?')) {
-      if (window.historyAPI) {
-        await window.historyAPI.clearAll();
-        renderEntries([]);
-      }
+    const confirmed = await window.dragonConfirm({
+      title: 'Limpar histórico',
+      message: 'Deseja limpar todo o histórico de navegação?',
+      confirmText: 'Limpar tudo',
+      cancelText: 'Cancelar',
+      danger: true
+    });
+    if (!confirmed) return;
+
+    if (window.historyAPI) {
+      await window.historyAPI.clearAll();
+      renderEntries([]);
     }
   });
 }
 
 loadHistory();
+
 ```
 
 ---
 
-### 4.51 `pages/bookmarks.html`
+### Arquivo: `pages/bookmarks.html`
 
 ```html
 <!DOCTYPE html>
@@ -16915,6 +18009,7 @@ loadHistory();
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;">
   <title>Favoritos - Dragon</title>
   <link rel="stylesheet" href="../src/renderer/styles/theme.css">
+  <link rel="stylesheet" href="dialog.css">
   <style>
     *, *::before, *::after {
       box-sizing: border-box;
@@ -17159,14 +18254,16 @@ loadHistory();
     </div>
   </main>
 
+  <script src="dialog.js"></script>
   <script src="bookmarks.js"></script>
 </body>
 </html>
+
 ```
 
 ---
 
-### 4.52 `pages/bookmarks.js`
+### Arquivo: `pages/bookmarks.js`
 
 ```javascript
 // =============================================================================
@@ -17277,21 +18374,29 @@ if (inputSearch) {
 
 if (btnClearAll) {
   btnClearAll.addEventListener('click', async () => {
-    if (confirm('Deseja remover todos os favoritos?')) {
-      if (window.bookmarksAPI) {
-        await window.bookmarksAPI.clearAll();
-        renderBookmarks([]);
-      }
+    const confirmed = await window.dragonConfirm({
+      title: 'Remover favoritos',
+      message: 'Deseja remover todos os favoritos?',
+      confirmText: 'Remover todos',
+      cancelText: 'Cancelar',
+      danger: true
+    });
+    if (!confirmed) return;
+
+    if (window.bookmarksAPI) {
+      await window.bookmarksAPI.clearAll();
+      renderBookmarks([]);
     }
   });
 }
 
 loadBookmarks();
+
 ```
 
 ---
 
-### 4.53 `pages/downloads.html`
+### Arquivo: `pages/downloads.html`
 
 ```html
 <!DOCTYPE html>
@@ -17302,6 +18407,7 @@ loadBookmarks();
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;">
   <title>Downloads - Dragon</title>
   <link rel="stylesheet" href="../src/renderer/styles/theme.css">
+  <link rel="stylesheet" href="dialog.css">
   <style>
     *, *::before, *::after {
       box-sizing: border-box;
@@ -17520,14 +18626,16 @@ loadBookmarks();
     </div>
   </main>
 
+  <script src="dialog.js"></script>
   <script src="downloads.js"></script>
 </body>
 </html>
+
 ```
 
 ---
 
-### 4.54 `pages/downloads.js`
+### Arquivo: `pages/downloads.js`
 
 ```javascript
 // =============================================================================
@@ -17684,11 +18792,18 @@ function renderDownloads(list) {
 
 if (btnClearAll) {
   btnClearAll.addEventListener('click', async () => {
-    if (confirm('Deseja limpar a lista de downloads? Os arquivos no seu disco não serão apagados.')) {
-      if (window.downloadsAPI) {
-        await window.downloadsAPI.clearHistory();
-        renderDownloads([]);
-      }
+    const confirmed = await window.dragonConfirm({
+      title: 'Limpar lista de downloads',
+      message: 'Deseja limpar o histórico de downloads? Os arquivos salvos no seu computador não serão apagados.',
+      confirmText: 'Limpar lista',
+      cancelText: 'Cancelar',
+      danger: false
+    });
+    if (!confirmed) return;
+
+    if (window.downloadsAPI) {
+      await window.downloadsAPI.clearHistory();
+      renderDownloads([]);
     }
   });
 }
@@ -17700,11 +18815,12 @@ if (window.downloadsAPI && typeof window.downloadsAPI.onDownloadUpdate === 'func
 }
 
 loadDownloads();
+
 ```
 
 ---
 
-### 4.55 `pages/error.html`
+### Arquivo: `pages/error.html`
 
 ```html
 <!DOCTYPE html>
@@ -17878,11 +18994,12 @@ loadDownloads();
   <script src="error.js"></script>
 </body>
 </html>
+
 ```
 
 ---
 
-### 4.56 `pages/error.js`
+### Arquivo: `pages/error.js`
 
 ```javascript
 // =============================================================================
@@ -17922,11 +19039,12 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 });
+
 ```
 
 ---
 
-### 4.57 `pages/https-warning.html`
+### Arquivo: `pages/https-warning.html`
 
 ```html
 <!DOCTYPE html>
@@ -17936,6 +19054,7 @@ document.addEventListener('DOMContentLoaded', () => {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;">
   <title>Dragon - Aviso de Conexão Não Criptografada</title>
+  <link rel="stylesheet" href="dialog.css">
   <style>
     *, *::before, *::after {
       box-sizing: border-box;
@@ -18073,14 +19192,16 @@ document.addEventListener('DOMContentLoaded', () => {
     </div>
   </div>
 
+  <script src="dialog.js"></script>
   <script src="https-warning.js"></script>
 </body>
 </html>
+
 ```
 
 ---
 
-### 4.58 `pages/https-warning.js`
+### Arquivo: `pages/https-warning.js`
 
 ```javascript
 // =============================================================================
@@ -18142,15 +19263,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
       continueBtn.disabled = false;
       continueBtn.textContent = 'Continuar em HTTP (Inseguro)';
-      alert('Não foi possível obter autorização de segurança para este endereço.');
+      if (window.dragonAlert) {
+        await window.dragonAlert({
+          title: 'Erro de Autorização',
+          message: 'Não foi possível obter autorização de segurança para este endereço.'
+        });
+      } else {
+        alert('Não foi possível obter autorização de segurança para este endereço.');
+      }
     });
   }
 });
+
 ```
 
 ---
 
-### 4.59 `pages/cert-error.html`
+### Arquivo: `pages/cert-error.html`
 
 ```html
 <!DOCTYPE html>
@@ -18160,6 +19289,7 @@ document.addEventListener('DOMContentLoaded', () => {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;">
   <title>Dragon - Erro de Certificado de Segurança</title>
+  <link rel="stylesheet" href="dialog.css">
   <style>
     *, *::before, *::after {
       box-sizing: border-box;
@@ -18383,14 +19513,16 @@ document.addEventListener('DOMContentLoaded', () => {
     </div>
   </div>
 
+  <script src="dialog.js"></script>
   <script src="cert-error.js"></script>
 </body>
 </html>
+
 ```
 
 ---
 
-### 4.60 `pages/cert-error.js`
+### Arquivo: `pages/cert-error.js`
 
 ```javascript
 // =============================================================================
@@ -18455,9 +19587,17 @@ document.addEventListener('DOMContentLoaded', () => {
   if (btnDangerProceed) {
     btnDangerProceed.addEventListener('click', async () => {
       if (!targetUrl || targetUrl.includes('cert-error.html')) return;
-      const confirmed = window.confirm(
-        'ATENÇÃO: A conexão com este site NÃO é segura. O certificado digital não é confiável e terceiros podem interceptar ou adulterar suas informações pessoais.\n\nDeseja realmente continuar para este site de forma insegura?'
-      );
+      const confirmed = window.dragonConfirm
+        ? await window.dragonConfirm({
+            title: 'Aviso de Segurança',
+            message: 'A conexão com este site NÃO é segura. O certificado digital não é confiável e terceiros podem interceptar ou adulterar suas informações pessoais. Deseja realmente continuar para este site de forma insegura?',
+            confirmText: 'Continuar',
+            cancelText: 'Voltar',
+            danger: true
+          })
+        : window.confirm(
+            'ATENÇÃO: A conexão com este site NÃO é segura. O certificado digital não é confiável e terceiros podem interceptar ou adulterar suas informações pessoais.\n\nDeseja realmente continuar para este site de forma insegura?'
+          );
       if (confirmed) {
         if (window.certErrorAPI && typeof window.certErrorAPI.requestBypassToken === 'function') {
           try {
@@ -18475,11 +19615,12 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 });
+
 ```
 
 ---
 
-### 4.61 `test/clear-data.test.js`
+### Arquivo: `test/clear-data.test.js`
 
 ```javascript
 const test = require('node:test');
@@ -18710,11 +19851,66 @@ test('clearAllData: registra falhas no summary.errors e define success:false cas
     fs.rmSync(tempUserData, { recursive: true, force: true });
   } catch (e) {}
 });
+
 ```
 
 ---
 
-### 4.62 `test/downloads.test.js`
+### Arquivo: `test/dialog.test.js`
+
+```javascript
+const test = require('node:test');
+const assert = require('node:assert');
+const { normalizeDialogOptions } = require('../pages/dialog');
+
+test('dialog: normalizeDialogOptions com string para confirm', () => {
+  const opts = normalizeDialogOptions('Deseja continuar?', false);
+  assert.strictEqual(opts.title, 'Confirmação');
+  assert.strictEqual(opts.message, 'Deseja continuar?');
+  assert.strictEqual(opts.confirmText, 'Confirmar');
+  assert.strictEqual(opts.cancelText, 'Cancelar');
+  assert.strictEqual(opts.danger, false);
+});
+
+test('dialog: normalizeDialogOptions com string para alert', () => {
+  const opts = normalizeDialogOptions('Operação concluída com sucesso.', true);
+  assert.strictEqual(opts.title, 'Aviso');
+  assert.strictEqual(opts.message, 'Operação concluída com sucesso.');
+  assert.strictEqual(opts.confirmText, 'OK');
+  assert.strictEqual(opts.cancelText, 'Cancelar');
+  assert.strictEqual(opts.danger, false);
+});
+
+test('dialog: normalizeDialogOptions com objeto customizado perigoso', () => {
+  const opts = normalizeDialogOptions({
+    title: 'Limpar Tudo',
+    message: 'Esta ação não pode ser desfeita.',
+    confirmText: 'Limpar',
+    cancelText: 'Voltar',
+    danger: true
+  }, false);
+
+  assert.strictEqual(opts.title, 'Limpar Tudo');
+  assert.strictEqual(opts.message, 'Esta ação não pode ser desfeita.');
+  assert.strictEqual(opts.confirmText, 'Limpar');
+  assert.strictEqual(opts.cancelText, 'Voltar');
+  assert.strictEqual(opts.danger, true);
+});
+
+test('dialog: normalizeDialogOptions trata valores nulos/indefinidos graciosamente', () => {
+  const opts = normalizeDialogOptions(null, false);
+  assert.strictEqual(opts.title, 'Confirmação');
+  assert.strictEqual(opts.message, '');
+  assert.strictEqual(opts.confirmText, 'Confirmar');
+  assert.strictEqual(opts.cancelText, 'Cancelar');
+  assert.strictEqual(opts.danger, false);
+});
+
+```
+
+---
+
+### Arquivo: `test/downloads.test.js`
 
 ```javascript
 const test = require('node:test');
@@ -18756,11 +19952,12 @@ test('isRiskyDownload: não bloqueia nem afeta extensões seguras e comuns', () 
   assert.strictEqual(isRiskyDownload(null), false);
   assert.strictEqual(isRiskyDownload(undefined), false);
 });
+
 ```
 
 ---
 
-### 4.63 `test/fingerprint.test.js`
+### Arquivo: `test/fingerprint.test.js`
 
 ```javascript
 const test = require('node:test');
@@ -18991,11 +20188,12 @@ test('getFingerprintOptions: retorna listas completas para a UI', () => {
   assert.ok(Array.isArray(opts.localeList) && opts.localeList.length > 0);
   assert.ok(opts.gpuPresets && opts.gpuPresets.windows && opts.gpuPresets.macos);
 });
+
 ```
 
 ---
 
-### 4.64 `test/history.test.js`
+### Arquivo: `test/history.test.js`
 
 ```javascript
 const test = require('node:test');
@@ -19078,11 +20276,12 @@ test('history: flushHistorySync grava imediatamente em disco', () => {
     fs.rmSync(tempUserData, { recursive: true, force: true });
   } catch {}
 });
+
 ```
 
 ---
 
-### 4.65 `test/navigation.test.js`
+### Arquivo: `test/navigation.test.js`
 
 ```javascript
 const test = require('node:test');
@@ -19140,11 +20339,12 @@ test('navigation (módulo principal): normalizeInput gera URL de pesquisa corret
   assert.ok(!result.includes('%25s'));
   assert.ok(result.includes('gatos%20e%20cachorros'));
 });
+
 ```
 
 ---
 
-### 4.66 `test/permissions.test.js`
+### Arquivo: `test/permissions.test.js`
 
 ```javascript
 const test = require('node:test');
@@ -19226,11 +20426,12 @@ test('Fila de permissões: lógica pura de enfileiramento e resolução sequenci
     { id: 'req-2', allowed: false }
   ]);
 });
+
 ```
 
 ---
 
-### 4.67 `test/privacy.test.js`
+### Arquivo: `test/privacy.test.js`
 
 ```javascript
 const test = require('node:test');
@@ -19352,11 +20553,12 @@ test('isSuspiciousRedirectChain: detecta sequências rápidas de redirecionament
   assert.strictEqual(isSuspiciousRedirectChain(oldHistory, 'https://shadyad.org/landing', now, 1500, 2), false);
 });
 
+
 ```
 
 ---
 
-### 4.68 `test/settings.test.js`
+### Arquivo: `test/settings.test.js`
 
 ```javascript
 const test = require('node:test');
@@ -19364,7 +20566,9 @@ const assert = require('node:assert');
 const {
   isValidSetting,
   mergeWithDefaults,
-  DEFAULT_SETTINGS
+  DEFAULT_SETTINGS,
+  convertProxySettingsToUI,
+  convertProxyUIToSettings
 } = require('../src/main/pure/settings-utils');
 
 test('isValidSetting: valida tipos, limites e enums', () => {
@@ -19443,11 +20647,48 @@ test('mergeWithDefaults: mescla chaves válidas e descarta corrompidas', () => {
   assert.strictEqual(merged.chaveInvalida, undefined);
   assert.strictEqual(merged.searchEngine, DEFAULT_SETTINGS.searchEngine);
 });
+
+test('convertProxySettingsToUI: converte modelo de backend para UI', () => {
+  const settings = {
+    proxyMode: 'manual',
+    proxyRules: 'socks5://127.0.0.1:1080',
+    proxyAuthUser: 'dragon_user',
+    applyProxyToPrivateTabs: true,
+    hasProxyPassword: true
+  };
+
+  const ui = convertProxySettingsToUI(settings);
+  assert.strictEqual(ui.proxyEnabled, true);
+  assert.strictEqual(ui.proxyProtocol, 'socks5');
+  assert.strictEqual(ui.proxyHost, '127.0.0.1');
+  assert.strictEqual(ui.proxyPort, '1080');
+  assert.strictEqual(ui.proxyUsername, 'dragon_user');
+  assert.strictEqual(ui.proxyApplyPrivate, true);
+  assert.strictEqual(ui.hasProxyPassword, true);
+});
+
+test('convertProxyUIToSettings: converte dados do formulário para modelo persistido', () => {
+  const uiData = {
+    proxyEnabled: true,
+    proxyProtocol: 'http',
+    proxyHost: 'proxy.corp.com',
+    proxyPort: '8080',
+    proxyUsername: 'admin',
+    proxyApplyPrivate: false
+  };
+
+  const s = convertProxyUIToSettings(uiData);
+  assert.strictEqual(s.proxyMode, 'manual');
+  assert.strictEqual(s.proxyRules, 'http://proxy.corp.com:8080');
+  assert.strictEqual(s.proxyAuthUser, 'admin');
+  assert.strictEqual(s.applyProxyToPrivateTabs, false);
+});
+
 ```
 
 ---
 
-### 4.69 `test/tabs.test.js`
+### Arquivo: `test/tabs.test.js`
 
 ```javascript
 const test = require('node:test');
@@ -19483,26 +20724,3595 @@ test('reorderTabs: reordena corretamente elementos em array de abas', () => {
   reorder('tab-2', 'tab-2');
   assert.deepStrictEqual(tabs.map(t => t.id), ['tab-4', 'tab-2', 'tab-3', 'tab-1']);
 });
+
 ```
 
 ---
 
-### 4.70 `assets/blocklists/trackers.txt`
+### Arquivo: `assets/blocklists/trackers.txt`
 
 ```text
 # =============================================================================
 # assets/blocklists/trackers.txt
-# Lista de bloqueio de rastreadores integrada do Dragon
-# Origem: Peter Lowe's Ad and tracking server list
-# Total de dominios ativos cadastrados: 3569 dominios
+# Lista expandida de bloqueio de domínios conhecidos de rastreamento e publicidade
+# Baseada na lista Peter Lowe (pgl.yoyo.org) + EasyPrivacy + DuckDuckGo Tracker Radar
+# Total: 3569 domínios
 # =============================================================================
-# (Conteudo truncado no relatorio de auditoria conforme instrucao)
-# [3569 dominios incluidos e ativos no arquivo real]
+
+101com.com
+180hits.de
+180searchassistant.com
+1rx.io
+2020mustang.com
+207.net
+247media.com
+24log.com
+24pm-affiliation.com
+2linkpath.com
+2mdn.net
+2o7.net
+2znp09oa.com
+30ads.com
+3337723.com
+33across.com
+360yield-basic.com
+360yield.com
+3lift.com
+3o9s.short.gy
+4d5.net
+4dex.io
+4info.com
+4jnzhl0d0.com
+50websads.com
+51.la
+518ad.com
+6sc.co
+777partner.com
+77tracking.com
+7bpeople.com
+7cnq.net
+82o9v830.com
+a-ads.com
+a.mktw.net
+a.pemsrv.com
+a.sakh.com
+a.ucoz.net
+a.ucoz.ru
+a.vartoken.com
+a.vdo.ai
+a.vfghd.com
+a.vfgtb.com
+a.vfgth.com
+a.xanga.com
+a11.click
+a135.wftv.com
+a5.overclockers.ua
+aa-metrics.beauty.hotpepper.jp
+aa-metrics.recruit-card.jp
+aa-metrics.trip-ai.jp
+aaddzz.com
+aax-eu-dub.amazon.com
+aaxads.com
+abacho.net
+abc-ads.com
+ablink.comms.trainline.com
+ablink.info.wise.com
+ablink.news.emails-puregym.com
+ablinks.mail.hinge.co
+aboardlevel.com
+absolutering.com
+absorbingband.com
+abstractedauthority.com
+abtasty.com
+ac.rnm.ca
+accountsdoor.com
+acebunny.com
+acemlnb.com
+acobt.tech
+acridtwist.com
+actionsplash.com
+actonsoftware.com
+actualdeals.com
+actuallysheep.com
+actuallysnake.com
+acuityads.com
+acuityplatform.com
+acustomizedgift.com
+ad-balancer.at
+ad-balancer.net
+ad-cupid.com
+ad-delivery.net
+ad-pay.de
+ad-rotator.com
+ad-score.com
+ad-server.gulasidorna.se
+ad-space.net
+ad-up.com
+ad.71i.de
+ad.a8.net
+ad.abcnews.com
+ad.abctv.com
+ad.aboutwebservices.com
+ad.abum.com
+ad.admitad.com
+ad.allboxing.ru
+ad.altervista.org
+ad.amgdgt.com
+ad.anuntis.com
+ad.bitmedia.io
+ad.bizo.com
+ad.bondage.com
+ad.centrum.cz
+ad.cgi.cz
+ad.cooks.com
+ad.digitallook.com
+ad.dnoticias.pt
+ad.domainfactory.de
+ad.grafika.cz
+ad.gt
+ad.hbv.de
+ad.hyena.cz
+ad.iinfo.cz
+ad.infoseek.com
+ad.intl.xiaomi.com
+ad.jetsoftware.com
+ad.keenspace.com
+ad.lgappstv.com
+ad.liveinternet.ru
+ad.lupa.cz
+ad.mediastorm.hu
+ad.missena.io
+ad.musicmatch.com
+ad.myapple.pl
+ad.mynetreklam.com.streamprovider.net
+ad.nachtagenten.de
+ad.nettvservices.com
+ad.nttnavi.co.jp
+ad.nwt.cz
+ad.period-calendar.com
+ad.profiwin.de
+ad.prv.pl
+ad.reachlocal.com
+ad.simgames.net
+ad.style
+ad.technoratimedia.com
+ad.turn.com
+ad.tv2.no
+ad.universcine.com
+ad.usatoday.com
+ad.virtual-nights.com
+ad.wavu.hu
+ad.weatherbug.com
+ad.wz.cz
+ad.xiaomi.com
+ad.xmovies8.si
+ad.xrea.com
+ad.ztylez.com
+ad0.bigmir.net
+ad01.mediacorpsingapore.com
+ad1.emule-project.org
+ad1.kde.cz
+ad2.iinfo.cz
+ad2.lupa.cz
+ad2.netriota.hu
+ad2.nmm.de
+ad2.xrea.com
+ad3.iinfo.cz
+ad3.xrea.com
+ad4game.com
+ad4mat.com
+ad4mat.de
+ad4mat.net
+ad7.biz
+adabra.com
+adaction.de
+adadvisor.net
+adalliance.io
+adap.tv
+adapt.tv
+adbilty.me
+adblade.com
+adblade.org
+adblockanalytics.com
+adbooth.net
+adbot.com
+adbrite.com
+adbroker.de
+adbutler.com
+adcannyads.com
+adcash.com
+adcast.deviantart.com
+adcel.co
+adcell.de
+adcenter.net
+adclick.com
+adclient1.tucows.com
+adclixx.net
+adcolony.com
+adcomplete.com
+adconion.com
+adcontent.gamespy.com
+adcovery.com
+adcycle.com
+add.newmedia.cz
+addfreestats.com
+addme.com
+addressfriend.com
+ade.clmbtech.com
+adecn.com
+adeimptrck.com
+ademails.com
+adengage.com
+adetracking.com
+adexchangegate.com
+adexchangeprediction.com
+adexpose.com
+adext.inkclub.com
+adf.ly
+adfeed.marchex.com
+adflight.com
+adforce.com
+adform.com
+adform.net
+adformdsp.net
+adhaven.com
+adhese.be
+adhese.com
+adhigh.net
+adhood.com
+adhub.media
+adhunter.media
+adimage.guardian.co.uk
+adimages.been.com
+adimages.carsoup.com
+adimages.go.com
+adimages.homestore.com
+adimages.omroepzeeland.nl
+adimages.sanomawsoy.fi
+adimg.com.com
+adimg.uimserv.net
+adimg1.chosun.com
+adimgs.sapo.pt
+adingo.jp
+adinjector.net
+adinterax.com
+adisfy.com
+adition.com
+adition.de
+adition.net
+adizio.com
+adjix.com
+adjug.com
+adjuggler.com
+adjuggler.yourdictionary.com
+adjust.com
+adjustnetwork.com
+adk2.com
+adkora.com
+adktrack124.xyz
+adland.ru
+adlegend.com
+adlightning.com
+adlog.com.com
+adloox.com
+adlooxtracking.com
+adlure.net
+adm.fwmrm.net
+admailtiser.com
+adman.gr
+adman.otenet.gr
+admanagement.ch
+admanager.btopenworld.com
+admanager.carsoup.com
+admanmedia.com
+admantx.com
+admarketplace.net
+admarvel.com
+admaster.cc
+admaster.com.cn
+admatchly.com
+adme2.click
+admedia.com
+admeld.com
+admeridianads.com
+admex.com
+admidadsp.com
+adminder.com
+adminshop.com
+admixer.net
+admized.com
+admob.com
+admonitor.com
+adn.lrb.co.uk
+adnami.io
+adnet.asahi.com
+adnet.biz
+adnet.de
+adnet.ru
+adnetwork.net
+adnetworkperformance.com
+adnews.maddog2000.de
+adnium.com
+adnxs-simple.com
+adnxs.com
+adocean.pl
+adonspot.com
+adopsboost.com
+adoptum.net
+adoric-om.com
+adorigin.com
+adotmob.com
+adpepper.dk
+adpepper.nl
+adperium.com
+adpia.vn
+adplxmd.com
+adprofits.ru
+adpushup.com
+adrazzi.com
+adreactor.com
+adrecover.com
+adrecreate.com
+adremedy.com
+adreporting.com
+adrevolver.com
+adriver.ru
+adrolays.de
+adrotate.de
+adrotic.girlonthenet.com
+adrta.com
+ads-bilek.com
+ads-dev.pinterest.com
+ads-game-187f4.firebaseapp.com
+ads-img.mozilla.org
+ads-impressions.com
+ads-monitor.xyz
+ads-twitter.com
+ads.365.mk
+ads.5ci.lt
+ads.73dpi.com
+ads.aavv.com
+ads.abovetopsecret.com
+ads.aceweb.net
+ads.acpc.cat
+ads.acrosspf.com
+ads.activestate.com
+ads.adfox.ru
+ads.administrator.de
+ads.adred.de
+ads.adstream.com.ro
+ads.adultfriendfinder.com
+ads.advance.net
+ads.adverline.com
+ads.alt.com
+ads.amdmb.com
+ads.amigos.com
+ads.annabac.com
+ads.apn.co.nz
+ads.appsgeyser.com
+ads.as4x.tmcs.net
+ads.as4x.tmcs.ticketmaster.com
+ads.asiafriendfinder.com
+ads.avazu.net
+ads.bb59.ru
+ads.betfair.com
+ads.bigchurch.com
+ads.bigfoot.com
+ads.bing.com
+ads.bittorrent.com
+ads.blog.com
+ads.bluemountain.com
+ads.boerding.com
+ads.boylesports.com
+ads.canalblog.com
+ads.casinocity.com
+ads.casumoaffiliates.com
+ads.cbc.ca
+ads.cc
+ads.cc-dt.com
+ads.centraliprom.com
+ads.channel4.com
+ads.cheabit.com
+ads.citymagazine.si
+ads.clasificadox.com
+ads.co.com
+ads.colombiaonline.com
+ads.com.com
+ads.comeon.com
+ads.creative-serving.com
+ads.cybersales.cz
+ads.dada.it
+ads.dailycamera.com
+ads.deltha.hu
+ads.dennisnet.co.uk
+ads.desmoinesregister.com
+ads.deviantart.com
+ads.devmates.com
+ads.digital-digest.com
+ads.digitalmedianet.com
+ads.digitalpoint.com
+ads.doit.com.cn
+ads.domeus.com
+ads.eagletribune.com
+ads.easy-forex.com
+ads.economist.com
+ads.egrana.com.br
+ads.elcarado.com
+ads.electrocelt.com
+ads.emdee.ca
+ads.emirates.net.ae
+ads.epi.sk
+ads.eu.msn.com
+ads.fairfax.com.au
+ads.fastcomgroup.it
+ads.femmefab.nl
+ads.ferianc.com
+ads.filmup.com
+ads.financialcontent.com
+ads.flooble.com
+ads.fool.com
+ads.footymad.net
+ads.forbes.net
+ads.formit.cz
+ads.fortunecity.com
+ads.fotosidan.se
+ads.friendfinder.com
+ads.gamecity.net
+ads.gamespyid.com
+ads.gamigo.de
+ads.gaming-universe.de
+ads.gaming1.com
+ads.getlucky.com
+ads.gld.dk
+ads.gmodules.com
+ads.goyk.com
+ads.gradfinder.com
+ads.grindinggears.com
+ads.gsm-exchange.com
+ads.gsmexchange.com
+ads.guardian.co.uk
+ads.guardianunlimited.co.uk
+ads.hbv.de
+ads.hearstmags.com
+ads.heartlight.org
+ads.hollywood.com
+ads.horsehero.com
+ads.hsoub.com
+ads.ibest.com.br
+ads.ibryte.com
+ads.icq.com
+ads.ign.com
+ads.imagistica.com
+ads.imgur.com
+ads.independent.com.mt
+ads.infi.net
+ads.internic.co.il
+ads.ipowerweb.com
+ads.itv.com
+ads.jewishfriendfinder.com
+ads.jobsite.co.uk
+ads.justhungry.com
+ads.kabooaffiliates.com
+ads.kaktuz.net
+ads.kelbymediagroup.com
+ads.kinxxx.com
+ads.kompass.com
+ads.krawall.de
+ads.leovegas.com
+ads.lesbianpersonals.com
+ads.liberte.pl
+ads.linkedin.com
+ads.livenation.com
+ads.lzjl.com
+ads.ma7.tv
+ads.mail.bg
+ads.massinfra.nl
+ads.mcafee.com
+ads.mediaodyssey.com
+ads.mediasmart.es
+ads.medienhaus.de
+ads.meetcelebs.com
+ads.mgnetwork.com
+ads.miarroba.com
+ads.mic.com
+ads.mmania.com
+ads.mobilebet.com
+ads.mozilla.org
+ads.msn.com
+ads.muslimehelfen.org
+ads.mvscoelho.com
+ads.myadv.org
+ads.ndtv1.com
+ads.networksolutions.com
+ads.newgrounds.com
+ads.newmedia.cz
+ads.newsint.co.uk
+ads.newsquest.co.uk
+ads.nj.com
+ads.nola.com
+ads.nordichardware.com
+ads.nordichardware.se
+ads.nyi.net
+ads.nytimes.com
+ads.nyx.cz
+ads.nzcity.co.nz
+ads.o2.pl
+ads.oddschecker.com
+ads.okcimg.com
+ads.ole.com
+ads.oneplace.com
+ads.opensubtitles.org
+ads.optusnet.com.au
+ads.outpersonals.com
+ads.oxyshop.cz
+ads.passion.com
+ads.paymonex.net
+ads.pexi.nl
+ads.phpclasses.org
+ads.pinterest.com
+ads.planet.nl
+ads.pni.com
+ads.printscr.com
+ads.prisacom.com
+ads.prod.webservices.mozgcp.net
+ads.program3.com
+ads.psd2html.com
+ads.pubmatic.com
+ads.quoka.de
+ads.radio1.lv
+ads.recoletos.es
+ads.rediff.com
+ads.redlightcenter.com
+ads.revjet.com
+ads.reward-hunt.com
+ads.samsung.com
+ads.saymedia.com
+ads.scifi.com
+ads.seniorfriendfinder.com
+ads.servebom.com
+ads.shizmoo.com
+ads.sift.co.uk
+ads.sjon.info
+ads.smartclick.com
+ads.socialtheater.com
+ads.soft32.com
+ads.soweb.gr
+ads.space.com
+ads.sun.com
+ads.suomiautomaatti.com
+ads.supplyframe.com
+ads.syscdn.de
+ads.themovienation.com
+ads.thestar.com
+ads.thrillsaffiliates.com
+ads.tiktok.com
+ads.tmcs.net
+ads.todoti.com.br
+ads.toplayaffiliates.com
+ads.townhall.com
+ads.travelaudience.com
+ads.trinitymirror.co.uk
+ads.tso.dennisnet.co.uk
+ads.twitter.com
+ads.twojatv.info
+ads.ultimate-guitar.com
+ads.uncrate.com
+ads.unison.bg
+ads.usatoday.com
+ads.uxs.at
+ads.v-lazer.com
+ads.verticalresponse.com
+ads.vgchartz.com
+ads.virtual-nights.com
+ads.virtuopolitan.com
+ads.vnumedia.com
+ads.walkiberia.com
+ads.watson.ch
+ads.weather.ca
+ads.web.de
+ads.webinak.sk
+ads.webmasterpoint.org
+ads.whoishostingthis.com
+ads.wiezoekje.nl
+ads.wikia.nocookie.net
+ads.wineenthusiast.com
+ads.wwe.biz
+ads.xhamster.com
+ads.xtra.co.nz
+ads.yahoo.com
+ads.yimg.com
+ads.yldmgrimg.net
+ads.youtube.com
+ads.yumenetworks.com
+ads.zorvec.name
+ads1-adnow.com
+ads1.msn.com
+ads1.virtual-nights.com
+ads10.speedbit.com
+ads180.com
+ads2.contentabc.com
+ads2.femmefab.nl
+ads2.gamecity.net
+ads2.virtual-nights.com
+ads2.xnet.cz
+ads2004.treiberupdate.de
+ads24h.net
+ads3-adnow.com
+ads3.gamecity.net
+ads3.virtual-nights.com
+ads4.gamecity.net
+ads4.virtual-nights.com
+ads4homes.com
+ads5.virtual-nights.com
+ads6.gamecity.net
+ads7.gamecity.net
+adsafeprotected.com
+adsatt.abc.starwave.com
+adsatt.abcnews.starwave.com
+adsatt.espn.go.com
+adsatt.espn.starwave.com
+adsatt.go.starwave.com
+adsbigo.com
+adsby.bidtheatre.com
+adsbydelema.com
+adscale.de
+adscholar.com
+adscience.nl
+adsco.re
+adscpm.com
+adsdaq.com
+adsdk.yandex.ru
+adsend.de
+adsensecustomsearchads.com
+adserv.snigelweb.com
+adserve.ams.rhythmxchange.com
+adserve.gkeurope.de
+adserve.io
+adserve.jbs.org
+adserver.71i.de
+adserver.adultfriendfinder.com
+adserver.adverty.com
+adserver.anawe.cz
+adserver.ariase.org
+adserver.bdoce.cl
+adserver.betandwin.de
+adserver.bing.com
+adserver.bizedge.com
+adserver.bizhat.com
+adserver.break-even.it
+adserver.cams.com
+adserver.cdnstream.com
+adserver.cherryfind.co.uk
+adserver.com
+adserver.diariodosertao.com.br
+adserver.digitoday.com
+adserver.echdk.pl
+adserver.friendfinder.com
+adserver.generationiron.com
+adserver.hwupgrade.it
+adserver.ilango.de
+adserver.industryarena.com
+adserver.info7.mx
+adserver.irishwebmasterforum.com
+adserver.kontent.com
+adserver.mobi
+adserver.news.com.au
+adserver.nydailynews.com
+adserver.o2.pl
+adserver.oddschecker.com
+adserver.omroepzeeland.nl
+adserver.otthonom.hu
+adserver.pampa.com.br
+adserver.piksel.mk
+adserver.pl
+adserver.portugalmail.net
+adserver.pressboard.ca
+adserver.sanomawsoy.fi
+adserver.sciflicks.com
+adserver.scr.sk
+adserver.smgfiles.com
+adserver.trojaner-info.de
+adserver.tupolska.com
+adserver.twitpic.com
+adserver.virginmedia.com
+adserver.waggonerguide.com
+adserver01.de
+adserverplus.com
+adserverpub.com
+adserversolutions.com
+adserverxxl.de
+adservice.google.com
+adservice.google.com.mt
+adserving.unibet.com
+adservingfront.com
+adservrs.com
+adservrs.com.edgekey.net
+adsfac.eu
+adsfac.net
+adsflowprime.top
+adshrink.it
+adside.com
+adsiduous.com
+adskeeper.co.uk
+adskeeper.com
+adsklick.de
+adsmart.net
+adsmartracker.com
+adsmetadata.startappservice.com
+adsmogo.com
+adsnative.com
+adsoftware.com
+adsolut.in
+adspeed.net
+adspirit.de
+adsponse.de
+adspredictiv.com
+adspsp.com
+adsroller.com
+adsrv.deviantart.com
+adsrv.eacdn.com
+adsrv.iol.co.za
+adsrv.kobi.tv
+adsrv.moebelmarkt.tv
+adsrv2.swidnica24.pl
+adsrvr.org
+adstacks.in
+adstanding.com
+adstat.4u.pl
+adstest.weather.com
+adstrategy-elb.go2cloud.org
+adstub.net
+adsupply.com
+adswizz.com
+adsxyz.com
+adsynergy.com
+adsys.townnews.com
+adsystem.simplemachines.org
+adt598.com
+adtagj.portal-factory.com
+adtech.com
+adtech.de
+adtechjp.com
+adtechus.com
+adtegrity.net
+adthis.com
+adthrive.com
+adtiger.de
+adtilt.com
+adtimizer.co
+adtng.com
+adtology.com
+adtoma.com
+adtrace.org
+adtrack.voicestar.com
+adtraction.com
+adtrade.net
+adtrk1.com
+adultadvertising.com
+adv-adserver.com
+adv.donejty.pl
+adv.freeonline.it
+adv.hwupgrade.it
+adv.mpvc.it
+adv.nexthardware.com
+adv.webmd.com
+adv.wp.pl
+adv.yo.cz
+advangelists.com
+advariant.com
+adventory.com
+adventurousamount.com
+advert.bayarea.com
+advert.dyna.ultraweb.hu
+adverticum.com
+adverticum.net
+advertipros.com
+advertise.com
+advertiseireland.com
+advertiserurl.com
+advertising.amazon.de
+advertising.com
+advertisingbanners.com
+advertisingbox.com
+advertmarket.com
+advertmedia.de
+advertpro.ya.com
+advertracker.com
+advertserve.com
+advertwizard.com
+advideo.uimserv.net
+adview.com
+advisormedia.cz
+adviva.net
+advnt.com
+adwebone.com
+adwhirl.com
+adworldnetwork.com
+adworx.at
+adworx.nl
+adx.gayboy.at
+adxpansion.com
+adxpose.com
+adxxxxxmost.co
+adyoulike.com
+adz.rashflash.com
+adzbazar.com
+adzerk.net
+adzerk.s3.amazonaws.com
+adzestocp.com
+aerialapps.com
+aerserv.com
+af-ad.co.uk
+affec.tv
+affectionknit.com
+affili.net
+affiliate.1800flowers.com
+affiliate.dtiserv.com
+affiliate.treated.com
+affiliatefuture.com
+affiliates.allposters.com
+affiliates.streamray.com
+affiliates.thinkhost.net
+affiliates.thrixxx.com
+affiliates.ultrahosting.com
+affiliatetracking.com
+affiliatetracking.net
+affiliatewindow.com
+afflnx.com
+afftracking.justanswer.com
+afraidlanguage.com
+agencysignals.com
+agkn.com
+ah-ha.com
+ahalogy.com
+aheadday.com
+aim4media.com
+airplanecoffee.com
+airpush.com
+aistat.net
+ak0gsh40.com
+akstat.io
+alchemist.go2cloud.org
+alclick.com
+alenty.com
+alexa-sitestats.s3.amazonaws.com
+algorix.co
+aliasanvil.com
+alikeaddition.com
+alipromo.com
+alluringbucket.com
+aloofmetal.com
+aloofvest.com
+alphonso.tv
+als-svc.nytimes.com
+amazingcounters.com
+amazon-adsystem.com
+americash.com
+amidsttruly.com
+amung.us
+analytics-fe.digital-cloud-prem.medallia.eu
+analytics-production.hapyak.com
+analytics.adpost.org
+analytics.algoepico.net
+analytics.bitrix.info
+analytics.cloudron.io
+analytics.ext.go-tellm.com
+analytics.google.com
+analytics.htmedia.in
+analytics.inlinemanual.com
+analytics.jst.ai
+analytics.justuno.com
+analytics.lucid.app
+analytics.mailmunch.co
+analytics.mobile.yandex.net
+analytics.momentum-institut.at
+analytics.myfinance.com
+analytics.org.coveo.com
+analytics.ostr.io
+analytics.phando.com
+analytics.picsart.com
+analytics.pinterest.com
+analytics.pointdrive.linkedin.com
+analytics.poolshool.com
+analytics.posttv.com
+analytics.santander.co.uk
+analytics.swiggy.com
+analytics.tempy.email
+analytics.tiktok.com
+analytics.xelondigital.com
+analytics.yahoo.com
+analyticsapi.happypancake.net
+ancientact.com
+androiddownload.net
+aniview.com
+annonser.dagbladet.no
+annoyedairport.com
+annoyingacoustics.com
+anrdoezrs.net
+anstrex.com
+anxiousapples.com
+api-ext.bixbitemarketing.com
+api.affiliations.site
+api.amplitude.com
+api.appmetrica.yandex.ru
+api.eu.amplitude.com
+api.intensifier.de
+api.iterable.com
+api.kameleoon.com
+api.lab.amplitude.com
+api.rudderlabs.com
+api.swetrix.com
+api2.amplitude.com
+apolloprogram.io
+app-analytics-v2.snapchat.com
+app-analytics.snapchat.com
+app-measurement.com
+app.pendo.io
+app2.salesmanago.pl
+appboycdn.com
+applovin.com
+appsflyer.com
+aps.hearstnp.com
+apsalar.com
+aptabase.com
+apture.com
+apu.samsungelectronics.com
+aquaticowl.com
+aralego.com
+arc1.msn.com
+archswimming.com
+ard.xxxblackbook.com
+aromamirror.com
+as.webmd.com
+as2.adserverhd.com
+aserv.motorsgate.com
+asewlfjqwlflkew.com
+askdriver.com
+aso1.net
+assets1.exgfnetwork.com
+assoc-amazon.com
+aswpapius.com
+aswpsdkus.com
+async.gsyndication.com
+at-o.net
+atdmt.com
+athena-ads.wikia.com
+ato.mx
+attractionbanana.com
+attribution.report
+atwola.com
+auctionads.com
+auctionads.net
+aud.pubmatic.com
+audience.media
+audience2media.com
+audienceinsights.com
+audio.ad
+audit.median.hu
+audit.webinform.hu
+augur.io
+auto-bannertausch.de
+avalonalbum.com
+avazutracking.net
+avenuea.com
+avocet.io
+awempire.com
+awin1.com
+awstrack.me
+awzbijw.com
+axonix.com
+ay.delivery
+ayads.co
+b-s.tercept.com
+b.videoamp.com
+b3.videoamp.com
+ba.afl.rakuten.co.jp
+backbeatmedia.com
+backtension.com
+bagsurprise.com
+banik.redigy.cz
+banner.ambercoastcasino.com
+banner.cotedazurpalace.com
+banner.easyspace.com
+banner.elisa.net
+banner.finzoom.ro
+banner.goldenpalace.com
+banner.inyourpocket.com
+banner.media-system.de
+banner.nixnet.cz
+banner.noblepoker.com
+banner.northsky.com
+banner.reinstil.de
+banner.tanto.de
+banner.titan-dsl.de
+banner10.zetasystem.dk
+bannerads.de
+bannerboxes.com
+bannerconnect.com
+bannerconnect.net
+bannergrabber.internet.gr
+bannerimage.com
+bannermall.com
+bannerpower.com
+banners.adultfriendfinder.com
+banners.amigos.com
+banners.asiafriendfinder.com
+banners.babylon-x.com
+banners.bol.com.br
+banners.cams.com
+banners.czi.cz
+banners.direction-x.com
+banners.freett.com
+banners.friendfinder.com
+banners.getiton.com
+banners.iq.pl
+banners.passion.com
+banners.payserve.com
+banners.resultonline.com
+banners.sys-con.com
+banners.thomsonlocal.com
+banners.virtuagirlhd.com
+bannerserver.com
+bannersng.yell.com
+bannerspace.com
+bannerswap.com
+bannertrack.net
+bannery.cz
+bannieres.wdmedia.net
+bans.bride.ru
+baremetrics.com
+barnesandnoble.bfast.com
+basebanner.com
+basketballbelieve.com
+baskettexture.com
+bastingart.com
+bat.bing.com
+bat.bing.net
+bbelements.com
+bbm-ad-stack-production.up.railway.app
+bbn.img.com.ua
+bdv.bidvertiser.com
+beachfront.com
+beacon.gu-web.net
+beacon.netflix.com
+beacons.gcp.gvt2.com
+beacons.gvt2.com
+bebi.com
+beemray.com
+begun.ru
+behavioralengine.com
+belstat.com
+belstat.nl
+benefits.sovendus.com
+benfly.net
+berp.com
+bespoke.iln8.net
+bestboundary.com
+bestbuy.7tiv.net
+bewilderedblade.com
+bfmio.com
+bhcumsc.com
+bid.pubmatic.com
+bidbarrel.cbsnews.com
+bidclix.com
+bidclix.net
+bidpapers.com
+bidr.io
+bidsopt.com
+bidswitch.net
+bidtellect.com
+bidvertiser.com
+big-bang-ads.com
+bigbangmedia.com
+bigclicks.com
+bigfishapparel.com
+bigreal.org
+bigworldfashion.com
+billboard.cz
+billtable.com
+birthdaybelief.com
+bitmedianetwork.com
+bizible.com
+bizographics.com
+bizrate.com
+bizzclick.com
+bkrtx.com
+bleachbubble.com
+blingbucks.com
+blis.com
+blockadblock.com
+blogads.com
+blogcounter.de
+blogherads.com
+blogtoplist.se
+blogtopsites.com
+blueconic.com
+blueconic.net
+bluekai.com
+bluelithium.com
+bluenest.net
+bluewhaleweb.com
+blushingbeast.com
+blushingbread.com
+bm.annonce.cz
+bn.bfast.com
+bnrs.ilm.ee
+boffoadsapi.com
+boilingbeetle.com
+boilingmadsoup.com
+bongacash.com
+boomads.com
+boomtrain.com
+boredcrown.com
+boudja.com
+bounceads.net
+bounceexchange.com
+bowie-cdn.fathomdns.com
+box.anchorfree.net
+bpath.com
+bpu.samsungelectronics.com
+braincash.com
+brand-display.com
+brandreachsys.com
+brandybison.com
+braze.eu
+breadbalance.com
+breakableinsurance.com
+breaktime.com.tw
+brealtime.com
+bridgetrack.com
+brightcom.com
+brightinfo.com
+brightmountainmedia.com
+broadcastbed.com
+broadstreetads.com
+browser-http-intake.logs.datadoghq.com
+browser-http-intake.logs.datadoghq.eu
+bs.yandex.ru
+btglss.net
+btrll.com
+bttrack.com
+bubblyaction.com
+buddycanvas.com
+bugpuk.ru
+buysellads.com
+buzzonclick.com
+bwp.download.com
+c.apple.com
+c.bigmir.net
+c.trkn.it
+c1exchange.com
+c212.net
+cakesdrum.com
+calculatingcircle.com
+calculatorstatement.com
+call-ad-network-api.marchex.com
+callousbrake.com
+callrail.com
+calmcactus.com
+calypsocapsule.com
+campaign.bharatmatrimony.com
+caniamedia.com
+capitalopera.com
+capriciouscorn.com
+captainbicycle.com
+captainstick.com
+carambo.la
+carbonads.com
+carbonads.net
+cardmethod.com
+caringcast.com
+carsarace.com
+cartstack.com
+carvecakes.com
+casalemedia.com
+casalmedia.com
+cash4members.com
+cash4popup.de
+cashcrate.com
+cashengines.com
+cashfiesta.com
+cashpartner.com
+cashstaging.me
+casinopays.com
+casinorewards.com
+casinotraffic.com
+catfront.dianping.com
+cattlecommittee.com
+causecherry.com
+cautiouscredit.com
+cbanners.virtuagirlhd.com
+cbzxy.com
+cdn.bannerflow.com
+cdn.branch.io
+cdn.freshmarketer.com
+cdn.heapanalytics.com
+cdn.keywee.co
+cdn.mouseflow.com
+cdn.onesignal.com
+cdn.scarabresearch.com
+cdn.segment.com
+cdn.smalk.ai
+cdnondemand.org
+cedato.com
+celtra.com
+centerpointmedia.com
+cetrk.com
+cgicounter.puretec.de
+chairscrack.com
+chalkdream.com
+channelintelligence.com
+chargecracker.com
+chart.dk
+chartbeat.com
+chartbeat.net
+chartboost.com
+checkmyimp.com
+checkstat.nl
+cherriescare.com
+childlikecrowd.com
+chillingtofu.com
+chitika.net
+chubbycreature.com
+citrusad.net
+cityads.telus.net
+cj.com
+cjbmanagement.com
+cjlog.com
+cl.turkishairlines.com
+cl0udh0st1ng.com
+clck.ru
+clevernt.com
+click-1.pl
+click-v4.expclknb.com
+click.airmalta-mail.com
+click.aliexpress.com
+click.allkeyshop.com
+click.bkdpt.com
+click.cartsguru.io
+click.ccg.nintendo.com
+click.cision.com
+click.classmates.com
+click.comm.rcibank.co.uk
+click.crm.ba.com
+click.digital.metaquestmail.com
+click.discord.com
+click.e.bbcmail.co.uk
+click.e.progressive.com
+click.e.zoom.us
+click.em.blizzard.com
+click.email.bbc.com
+click.email.lhh.com
+click.email.microsoftemail.com
+click.email.sonos.com
+click.emails.argos.co.uk
+click.emails.tuclothing.sainsburys.co.uk
+click.fool.com
+click.hookupinyourcity.com
+click.hooligapps.com
+click.i.southwesternrailway.com
+click.infoblox.com
+click.justwatch.com
+click.kmindex.ru
+click.liftoff.io
+click.mail.hotels.com
+click.mail.salesforce.com
+click.mailing.ticketmaster.com
+click.mkt.grab.com
+click.news.vans.com
+click.nl.npr.org
+click.nvgaming.nvidia.com
+click.redditmail.com
+click.uber.com
+click.v.visionlab.es
+click2freemoney.com
+click4.pro
+clickadddilla.com
+clickadz.com
+clickagents.com
+clickbank.com
+clickbooth.com
+clickboothlnk.com
+clickbrokers.com
+clickcease.com
+clickdensity.com
+clickedyclick.com
+clickfuse.com
+clickhereforcellphones.com
+clickngo.top
+clickonometrics.pl
+clickrtrckr.com
+clicks.checkatrade.com
+clicks.couchsurfing.com
+clicks.deliveroo.co.uk
+clicks.equantum.com
+clicks.eventbrite.com
+clicks.monzo.com
+clicks.njuskalo.hr
+clickserve.cc-dt.com
+clicksinfo.thefork.co.uk
+clicktag.de
+clickthruserver.com
+clickthrutraffic.com
+clicktrack.pubmatic.com
+clicktrack.ziyu.net
+clicktracks.com
+clicktrade.com
+clickxchange.com
+clickyab.com
+clickz.com
+client-logs-a.wbx2.com
+clientgear.com
+clientmetrics-pa.googleapis.com
+clikerz.net
+cliksolution.com
+clixgalore.com
+clk1005.com
+clk1011.com
+clk1015.com
+clkrev.com
+clksite.com
+cloudflareinsights.com
+cloudguppy.com
+clrstm.com
+clustrmaps.com
+cmp.dmgmediaprivacy.co.uk
+cmvrclicks000.com
+cnomy.com
+cnt1.pocitadlo.cz
+cnvlink.com
+cny.yoyo.org
+code.etracker.com
+codeadnetwork.com
+cognitiv.ai
+cointraffic.io
+coldbalance.com
+collector-dev.cdp-dev.cnn.com
+collector.cdp.cnn.com
+colonize.com
+colorfulpet.com
+coloroptimizer.com
+comfortablecheese.com
+commissionmonster.com
+communications.melitaltd.com
+compactbanner.com
+comparereaction.com
+compilework.com
+comprabanner.it
+conditionchange.com
+conductrics.com
+confiant-integrations.net
+confidencetalks.com
+configv2.unityads.unity3d.com
+connatix.com
+connectad.io
+connextra.com
+consciouscheese.com
+consensad.com
+consensu.org
+contadores.miarroba.com
+content.acc-hd.de
+content.ad
+content22.online.citi.com
+contextweb.com
+contrack.link
+controlium.net
+converge-digital.com
+conversantmedia.com
+conversionbet.com
+conversionruler.com
+convertingtraffic.com
+convrse.media
+cookies.cmpnet.com
+cookiesurfer.com
+coolkidsdistrict.com
+cootlogix.com
+copperstills.net
+copycarpenter.com
+copyrightaccesscontrols.com
+coremetrics.com
+correctedcode.com
+cosmosjackson.com
+count.rin.ru
+count.west263.com
+counted.com
+counter.bloke.com
+counter.cnw.cz
+counter.cz
+counter.dreamhost.com
+counter.mirohost.net
+counter.mojgorod.ru
+counter.rambler.ru
+counter.search.bg
+counter.snackly.co
+counter.yadro.ru
+counting.kmindex.ru
+coupling-media.de
+coxmt.com
+cozyhillside.com
+cpalead.com
+cpays.com
+cpmstar.com
+cpu.samsungelectronics.com
+cpx.to
+cpxinteractive.com
+cqcounter.com
+craktraffic.com
+crashchance.com
+crashlytics.com
+crashlyticsreports-pa.googleapis.com
+cratecamera.com
+crawlability.com
+crazyegg.com
+crazypopups.com
+creatives.livejasmin.com
+creatopy.net
+crimsonmeadow.com
+criteo.com
+criteo.net
+critictruck.com
+crowdedmass.com
+crowdgravity.com
+crsspxl.com
+crta.dailymail.co.uk
+crtv.mate1.com
+crwdcntrl.net
+crypto-loot.org
+crystalboulevard.com
+cs.co
+curbminers.com
+curiousmetal.com
+curtaincows.com
+curveshore.com
+cushiondrum.com
+customad.cnn.com
+customads.co
+customerevents.netflix.com
+customers.kameleoon.com
+cutechin.com
+cxense.com
+cyberbounty.com
+cyclinghere.com
+d-collect.jennifersoft.com
+d-collector.jennifersoft.com
+d.adroll.com
+d1f0tbk1v3e25u.cloudfront.net
+d2cmedia.ca
+d81mfvml8p5ml.cloudfront.net
+dabiaozhi.com
+dacdn.visualwebsiteoptimizer.com
+dacdn.vwo.com
+dakic-ia-300.com
+damageddistance.com
+damdoor.com
+dapper.net
+darngavel.com
+data.hailuo.ai
+datapickles.com
+datenow.link
+daybreaklights.com
+dc-storm.com
+de.tynt.com
+de17a.com
+dealdotcom.com
+decenterads.com
+decisivebase.com
+decisivedrawer.com
+decknetwork.net
+deepintent.com
+delicatecascade.com
+deloo.de
+demandbase.com
+demdex.net
+desertgates.com
+desiredirt.com
+detailedgovernment.com
+detectdiscovery.com
+dev.visualwebsiteoptimizer.com
+dewdroplagoon.com
+dianomi.com
+didtheyreadit.com
+digestiondrawer.com
+digital-ads.s3.amazonaws.com
+direct-events-collector.spot.im
+direct-promo.pro
+directaclick.com
+directorym.com
+discountclick.com
+discover-tech.io
+discreetfield.com
+displayvertising.com
+disqusads.com
+dist.belnk.com
+distillery.wistia.com
+distilltable.com
+districtm.ca
+districtm.io
+dmp.mall.tv
+dmtracker.com
+dmtracking.alibaba.com
+dmtracking2.alibaba.com
+dnsdelegation.io
+do-global.com
+dockdigestion.com
+dogcollarfavourbluff.com
+domaining.in
+domdex.com
+doqpm.click
+dotmetrics.net
+dotomi.com
+doubleclick.com
+doubleclick.de
+doubleclick.net
+doublepimp.com
+doubleverify.com
+dpbolvw.net
+dpu.samsungelectronics.com
+dq95d35.com
+dragonbats.com
+drumcash.com
+dsp.colpirio.com
+dsp.io
+dstillery.com
+dustyhammer.com
+dyntrk.com
+e-eu.customeriomail.com
+e-m.fr
+e-planning.net
+e.customeriomail.com
+e.kde.cz
+e37364.dscd.akamaiedge.net
+eadexchange.com
+eas.almamedia.fi
+easyhits4u.com
+ebayadvertising.com
+ebuzzing.com
+echoacloud.com
+ecircle-ag.com
+ecleneue.com
+eclick.vn
+eclicks.deliveroo.com
+eclkspbn.com
+ecoupons.com
+edaa.eu
+edgexads.com
+eighthlayer.net
+eiv.baidu.com
+elasticchange.com
+elderlytown.com
+elitedollars.com
+email-link.adtidy.info
+email-link.adtidy.net
+email-link.adtidy.org
+email-links.crowdfireapp.com
+email-open.adtidy.net
+email-open.adtidy.org
+email-trk.ihg-businessedge.com
+email.mg1.substack.com
+emailer.stockbit.com
+emaillinks.soundiiz.com
+emebo.io
+emerse.com
+emetriq.de
+emjcd.com
+eml.blackduck.com
+emltrk.com
+emodoinc.com
+emptyescort.com
+emxdigital.com
+energeticladybug.com
+energyfools.com
+engage.tines.com
+engage.windows.com
+engagebdr.com
+engageya.com
+engine.espace.netavenir.com
+engineertrick.com
+enginenetwork.com
+enormousearth.com
+enquisite.com
+ensighten.com
+entercasino.com
+entrecard.s3.amazonaws.com
+enviousthread.com
+epom.com
+epp.bih.net.ba
+eqads.com
+eqy.link
+erne.co
+ero-advertising.com
+essaygiants.com
+esty.com
+et.educationdynamics.com
+et.nytimes.com
+etahub.com
+etargetnet.com
+eu-adcenter.net
+eule1.pmu.fr
+eulerian.net
+eurekster.com
+euros4click.de
+eusta.de
+evadav.com
+evadavdsp.pro
+evencoating.com
+eventexistence.com
+events-eu.freshsuccess.com
+events-us.freshsuccess.com
+events.hotjar.io
+everestads.net
+everesttech.net
+evergage.com
+eversales.space
+evs.sgmt.loom.com
+evyy.net
+exampleshake.com
+exchange-it.com
+exchangead.com
+exchangeclicksonline.com
+exelate.com
+exelator.com
+exhibitsneeze.com
+exit76.com
+exitexchange.com
+exitfuel.com
+exoclick.com
+exosrv.com
+experianmarketingservices.digital
+explorads.com
+exponea.com
+exponential.com
+exportdialog.com
+express-submit.de
+extractobservation.com
+extreme-dm.com
+extremetracking.com
+eyeota.net
+eyeviewads.com
+eyewonder.com
+ezula.com
+f.pie.org
+f7ds.liberation.fr
+fabric.io
+fadedsnow.com
+fairfeeling.com
+fakedisguise.com
+fallaciousfifth.com
+fallingshoals.com
+fam-ad.com
+farethief.com
+farmergoldfish.com
+fast-redirecting.com
+fastclick.com
+fastclick.com.edgesuite.net
+fastclick.net
+fastly-insights.com
+faultycanvas.com
+fave.co
+faxcoupons.com
+fc.webmasterpro.de
+feedbackresearch.com
+feedjit.com
+feedmob.com
+feelwarmth.com
+femalecook.com
+fenxi.com
+figsprotein.com
+figurehunter.net
+fillthemap.com
+fimserve.com
+findcommerce.com
+findyourcasino.com
+fireads.online
+fireads.org
+fireworkadservices.com
+fireworkanalytics.com
+fireworks-advertising.com
+firstlightera.com
+fishingtoolsbox.com
+fixedfold.com
+fjordsand.com
+flairadscpc.com
+flakyfeast.com
+flashtalking.com
+flashtexting.com
+fleshlightcash.com
+flexbanner.com
+flimsycircle.com
+flimsythought.com
+floodprincipal.com
+flourishinginnovation.com
+floweryflavor.com
+flowgo.com
+flurry.com
+fontserif.com
+foo.cosmocode.de
+foresee.com
+forex-affiliate.net
+forkcdn.com
+fourlevelsgame.com
+fpctraffic.com
+fpjs.io
+fqtag.com
+fraysystems.com
+free-counter.co.uk
+freebanner.com
+freecounterstat.com
+freedomgrail.com
+freelogs.com
+freepay.com
+freestats.com
+freestats.tv
+freewebcounter.com
+freewheel.com
+freewheel.tv
+freezingbuilding.com
+frequentflesh.com
+freshrelevance.com
+fronttoad.com
+frtyj.com
+frtyk.com
+fudgegenie.com
+fullrestore.net
+fullstory.com
+functionalcrown.com
+functionalfeather.com
+funklicks.com
+funnelytics.io
+funtoyplanet.com
+furryfork.com
+fusionads.net
+fusionquest.com
+futuristicfifth.com
+futuristicframe.com
+fuzzybasketball.com
+fwcdn1.com
+fwcdn2.com
+fxstyle.net
+g2.gumgum.com
+ga.clearbit.com
+gadsbee.com
+galaxien.com
+game-advertising-online.com
+gamesites100.net
+gamesites200.com
+gammamaximum.com
+gaug.es
+gavvia.com
+gearwom.de
+geo.digitalpoint.com
+geobanner.adultfriendfinder.com
+georiot.com
+geovisite.com
+getclicky.com
+getintent.com
+getmyads.com
+giddycoat.com
+glasscoyote.com
+glisteningsign.com
+globalismedia.com
+gloriousbeef.com
+gmads.net
+gml.email
+go-clicks.de
+go-link.network
+go-mpulse.net
+go-rank.de
+go.clickwww.com
+go.dhs.gov
+go.eu.sparkpostmail1.com
+go.first.org
+go.icann.org
+go.scmagazine.com
+go.xlirdr.com
+go2affise.com
+go2cloud.org
+godseedband.com
+goingplatinum.com
+goldstats.com
+gondolagnome.com
+goodcontentservice.top
+google-analytics.com
+googleadservices.com
+googleanalytics.com
+googlesyndication.com
+googletagmanager.com
+googletagservices.com
+goqon.com
+gostats.com
+gothamads.com
+gotraffic.net
+gp.dejanews.com
+grandfatherguitar.com
+granlite.com
+grapeshot.co.uk
+greystripe.com
+groovespacing.com
+grouchybrothers.com
+groundtruth.com
+growthrx.in
+gscontxt.net
+guardeddirection.com
+guardedschool.com
+gumyfui.com
+gunggo.com
+h-bid.com
+h-trck.com
+h0.t.hubspotemail.net
+haikusoap.com
+halcyoncanyon.com
+halocolor.com
+haltingbadge.com
+hammerhearing.com
+hamsterspot.com
+handsomehose.com
+handyfireman.com
+handyincrease.com
+haplesshydrant.com
+harrenmedia.com
+harrenmedianetwork.com
+hayweb.net
+hb.afl.rakuten.co.jp
+hb.vntsm.com
+hbb.afl.rakuten.co.jp
+hbopenbid.pubmatic.com
+heap.com
+hellobar.com
+helpcollar.com
+herbalaffiliateprogram.com
+hexcan.com
+hexusads.fluent.ltd.uk
+heyos.com
+hf5rbejvpwds.com
+hfc195b.com
+hgads.com
+highnoongear.com
+hightrafficads.com
+hilariouszinc.com
+histats.com
+historytrade.com
+hit-parade.com
+hit.ua
+hitbox.com
+hitcounters.miarroba.com
+hitlist.ru
+hitlounge.com
+hitometer.com
+hits-i.iubenda.com
+hits.europuls.eu
+hits.informer.com
+hits.puls.lv
+hits.sh
+hits.theguardian.com
+hits4me.com
+hitslink.com
+hittail.com
+hlok.qertewrt.com
+hocgeese.com
+hollowafterthought.com
+homelycrown.com
+homepageking.de
+honeybutterbliss.com
+honorableland.com
+hostedads.realitykings.com
+hotjar.com
+hotlog.ru
+hotrank.com.tw
+hoverowl.com
+hs-analytics.net
+hs-banner.com
+hsadspixel.net
+hsleadflows.net
+hsn.uqhv.net
+htlbid.com
+httpool.com
+hubspotlinks.com
+hueads.com
+hueadsortb.com
+hueadsxml.com
+hurricanedigitalmedia.com
+hustlercoach.com
+hydraconcept.com
+hydramedia.com
+hyperbanner.net
+hypertracker.com
+hyprmx.com
+hystericalcloth.com
+i-i.lt
+i305175.net
+ia.iinfo.cz
+iad.anm.co.uk
+iadnet.com
+ibillboard.com
+icptrack.com
+id5-sync.com
+idealadvertising.net
+idevaffiliate.com
+idtargeting.com
+ientrymail.com
+iesnare.com
+ifa.tube8live.com
+ilbanner.com
+ilead.itrack.it
+illustriousoatmeal.com
+image2.pubmatic.com
+image3.pubmatic.com
+image4.pubmatic.com
+image6.pubmatic.com
+imagecash.net
+images-pw.secureserver.net
+img.prohardver.hu
+imgpromo.easyrencontre.com
+immensehoney.com
+imonomy.com
+imp.i312864.net
+impchkdsp.com
+impossibleexpansion.com
+imprese.cz
+impressionmedia.cz
+impressionmonster.com
+improvedigital.com
+imrworldwide.com
+inclk.com
+incognitosearches.com
+incoming-telemetry.thunderbird.net
+incoming.telemetry.mozilla.org
+indexexchange.com
+indexstats.com
+indexww.com
+indieclick.com
+industrybrains.com
+inetlog.ru
+infinite-ads.com
+infinityads.com
+infoevent.startappservice.com
+infolinks.com
+ingest.in.signoz.cloud
+inmobi.com
+inner-active.com
+inner-active.mobi
+innovid.com
+inquisitiveinvention.com
+insgly.net
+insidepsych.net
+insightexpress.com
+insightexpressai.com
+inskinad.com
+inspectlet.com
+install.365-stream.com
+instantmadness.com
+insticator.com
+intelliads.com
+intelligenceadx.com
+interactive.forthnet.gr
+intercom-clicks.com
+intergi.com
+internalcondition.com
+internetfuel.com
+interreklame.de
+ioam.de
+ip.ro
+iperceptions.com
+ipredictive.com
+ipstack.com
+irchan.com
+ireklama.cz
+is-tracking-pixel-api-prod.appspot.com
+islandwebhelp.com
+itop.cz
+itrackly.com
+ivwbox.de
+ivykiosk.com
+iyfbodn.com
+iyfnzgb.com
+izcle.com
+j93557g.com
+jads.co
+jamexport.com
+jcount.com
+jdoqocy.com
+jewelrysprings.com
+jinkads.de
+joetec.net
+joyoussurprise.com
+js-agent.newrelic.com
+js-api.otherlevels.com
+js-tags.otherlevels.com
+js.iterable.com
+js.users.51.la
+jsecoin.com
+jsrdn.com
+jubilantglimmer.com
+juiceblocks.com
+juicyads.com
+juicyads.me
+jumptap.com
+jungroup.com
+justicejudo.com
+justpremium.com
+justrelevant.com
+justwowjars.com
+k.iinfo.cz
+kameleoon.eu
+kanoodle.com
+kargo.com
+kernellife.com
+kickoffo.site
+kindads.com
+kindlereunion.com
+kissmetrics.com
+kittentacos.com
+kittycatking.com
+klclick.com
+klclick1.com
+kliks.nl
+knitstamp.com
+knorex.com
+knottyswing.com
+komoona.com
+kompasads.com
+kontera.com
+kost.tv
+kpu.samsungelectronics.com
+kraken.rambler.ru
+krxd.net
+ktu.sv2.biz
+kueezrtb.com
+kvsadman.com
+l1.britannica.com
+lakesecure.com
+lameletters.com
+landkarts.com
+larati.net
+largebrass.com
+laughcloth.com
+launchbit.com
+layer-ad.de
+layer-ads.de
+lazybumblebee.com
+lbn.ru
+lead02.com
+leadboltads.net
+leadclick.com
+leadinfo.net
+leadingedgecash.com
+leadplace.fr
+leadspace.com
+leadzupc.com
+leaplunchroom.com
+leftliquid.com
+lemmatechnologies.com
+lemnisk.co
+lever-analytics.com
+lfeeder.com
+lfstmedia.com
+lgsmartad.com
+li.alibris.com
+li.azstarnet.com
+li.dailycaller.com
+li.gatehousemedia.com
+li.gq.com
+li.hearstmags.com
+li.livingsocial.com
+li.mw.drhinternet.net
+li.patheos.com
+li.pmc.com
+li.realtor.com
+li.ziffimages.com
+liadm.com
+libraryfacts.com
+lifeimpressions.net
+liftdna.com
+ligatus.com
+ligatus.de
+lightspeedcash.com
+lightstep.medium.systems
+lijit.com
+limecodesign.com
+link-booster.de
+link.axios.com
+link.beelivery.com
+link.email.davidlloydclubs.co.uk
+link.email.usmagazine.com
+link.go.chase
+link.sbstck.com
+link.team.hyperoptic.com
+link.theatlantic.com
+link.uk.expediamail.com
+linkbuddies.com
+linkexchange.com
+linkprice.com
+linkrain.com
+linkreferral.com
+links-ranking.de
+links.email.crunchbase.com
+links.housekeep.com
+links.prosservice.fr
+links.zoopla.co.uk
+linksoutside.com
+linkstable.com
+linkstorms.com
+linkswaper.com
+linksynergy.com
+linktarget.com
+linkvertise.com
+liquidad.narrowcastmedia.com
+litix.io
+live.trmzum.com
+liveadexchanger.com
+liveintent.com
+livelylaugh.com
+liverail.com
+livingsleet.com
+lizardslaugh.com
+lkqd.com
+lnks.gd
+loading321.com
+loadsurprise.com
+locked4.com
+lockerdome.com
+locolava.com
+log.btopenworld.com
+log.logrocket.io
+log.pinterest.com
+log.videocampaign.co
+logger.snackly.co
+logs.roku.com
+logs.spilgames.com
+logsss.com
+logua.com
+look.djfiln.com
+look.ufinkln.com
+loopme.com
+loudlunch.com
+lowest-prices.eu
+ls.hit.gemius.pl
+lucidmedia.com
+luckyorange.com
+ludicrousarch.com
+lyricshook.com
+lytics.io
+lzjl.com
+m.trb.com
+m2.ai
+m32.media
+m4n.nl
+m6r.eu
+mackeeperapp.mackeeper.com
+madclient.uimserv.net
+madcpms.com
+madinad.com
+madisonavenue.com
+madvertise.de
+magicadz.co
+magicaljoin.com
+magnetise.io
+magsrv.com
+mail-ads.google.com
+maliva-mcs.byteoversea.com
+maltiverse.lt.acemlnc.com
+manageadv.cblogs.eu
+mantisadnetwork.com
+mapcommand.com
+marinsm.com
+markedmeasure.com
+marketing.888.com
+marketing.desertcart.com
+marketing.net.brillen.de
+marketing.net.home24.de
+marketing.net.occhiali24.it
+marketing.nyi.net
+marketing.osijek031.com
+marketingcloudapis.com
+marketingsolutions.yahoo.com
+marketo.com
+marlowpillow.sjv.io
+marriedbelief.com
+mas.sector.sk
+matchcraft.com
+matheranalytics.com
+mathtag.com
+matomo.activate.cz
+matomo.crossiety.app
+mautic.com
+max.i12.de
+maximiser.net
+maxonclick.com
+mbs.megaroticlive.com
+mcdlks.com
+mcs-va.tiktok.com
+mcs-va.tiktokv.com
+meadowlullaby.com
+measlymiddle.com
+measure.office.com
+measuremap.com
+meatydime.com
+media-adrunner.mycomputer.com
+media.funpic.de
+media.net
+media01.eu
+media6degrees.com
+mediaarea.eu
+mediabridge.cc
+mediafuse.com
+mediageneral.com
+mediaiqdigital.com
+mediamath.com
+mediamgr.ugo.com
+mediaplazza.com
+mediaplex.com
+mediascale.de
+mediaserver.bwinpartypartners.it
+mediasmart.io
+mediasquare.fr
+mediatext.com
+mediavine.com
+mediavoice.com
+medleyads.com
+medyanetads.com
+meetrics.net
+megacash.de
+megastats.com
+megawerbung.de
+meltmilk.com
+memorizeneck.com
+mercuryace.com
+merequartz.com
+messagelists.com
+metadsp.co.uk
+metaffiliation.com
+metajaws.com
+metanetwork.com
+methodcash.com
+metrics-a.wbx2.com
+metrics-logger.spot.im
+metrics.api.drift.com
+metrics.articulate.com
+metrics.cnn.com
+metrics.foxnews.com
+metrics.getrockerbox.com
+metrics.gfycat.com
+metrics.govexec.com
+metrics.icloud.com
+metrics.mzstatic.com
+metrilo.com
+metrix.luxnet.io
+mfadsrvr.com
+mg2connext.com
+mgid.com
+microstatic.pl
+microticker.com
+milotree.com
+mineinvoice.com
+minewhat.com
+minibilling.com
+mintegral.com
+mintfunnel.co
+mittencattle.com
+mix2ads.com
+mixpanel.com
+mkto-ab410147.com
+mktoresp.com
+ml314.com
+mlm.de
+mlsend.com
+mltrk.io
+mmismm.com
+mmstat.com
+mmtro.com
+mntzrlt.net
+moartraffic.com
+moat.com
+moatads.com
+moatpixel.com
+mobclix.com
+mobfox.com
+mobileanalytics.us-east-1.amazonaws.com
+mobilefuse.com
+modernpricing.com
+mon-va.byteoversea.com
+mon.byteoversea.com
+monarchads.com
+monetate.net
+monetizer101.com
+monkeyapes.com
+monsterpops.com
+mookie1.com
+moonwager.com
+mopub.com
+morefolks.com
+motionlessmeeting.com
+motionspots.com
+mousestats.com
+movad.net
+movemeal.com
+mparticle.com
+mpstat.us
+mr-rank.de
+mrskincash.com
+mstrlytcs.com
+mtrcs.samba.tv
+mtree.com
+mtrtb.com
+munchkin.marketo.net
+mundanenail.com
+mushroomgods.com
+muteknife.com
+muwmedia.com
+mxptint.net
+my.rtmark.net
+myads.company
+myads.net
+myads.telkomsel.com
+myaffiliateprogram.com
+mybbc-analytics.files.bbci.co.uk
+mybloglog.com
+mybuys.com
+mycounter.ua
+mydas.mobi
+mylead-tracking.tracknow.info
+mylead.global
+mypagerank.net
+mypowermall.com
+mysketchpad.com
+mystat-in.net
+mystat.pl
+mytop-in.net
+myweb3id.io
+n69.com
+naj.sk
+nakedly.ai
+nappyattack.com
+nappyneck.com
+nastydollars.com
+nativeroll.tv
+navegg.com
+navigator.io
+navrcholu.cz
+ncaudienceexchange.com
+ndparking.com
+nebulacrescent.com
+nedstatbasic.net
+needyneedle.com
+neighborlywatch.com
+nend.net
+neocounter.neoworx-blog-tools.net
+nervoussummer.com
+net-filter.com
+netaffiliation.com
+netagent.cz
+netclickstats.com
+netdirect.nl
+netech.postaffiliatepro.com
+netmera-web.com
+netmera.com
+netmng.com
+netpool.netbookia.net
+netshelter.net
+neudesicmediagroup.com
+newads.bangbros.com
+newnet.qsrch.com
+newnudecash.com
+news-cdn.site
+newsadsppush.com
+newsbotnet.com
+newt1.adultadworld.com
+nexac.com
+ng3.ads.warnerbros.com
+nitroclicks.com
+nmtracking.netflix.com
+noiselessplough.com
+nondescriptcrowd.com
+nondescriptnote.com
+nondescriptstocking.com
+novem.pl
+nowaymail.com
+npttech.com
+nr-data.net
+nr.mmcdn.com
+nr.static.mmcdn.com
+ns1p.net
+ntv.io
+ntvk1.ru
+nullitics.com
+nuseek.com
+nutralove.co
+nzaza.com
+o2.mouseflow.com
+o333o.com
+oafishobservation.com
+oas.benchmark.fr
+oas.repubblica.it
+oas.roanoke.com
+oas.toronto.com
+oas.uniontrib.com
+oascentral.chicagobusiness.com
+oascentral.fortunecity.com
+oascentral.register.com
+objecthero.com
+obs.sd4823.spglobal.com
+obscenesidewalk.com
+oceancloudhosts.com
+odbierz-bony.ovp.pl
+oewa.at
+offaces-butional.com
+offer.fyber.com
+offer.sponsorpay.com
+offerforge.com
+offermatica.com
+offers.gateway-lts450.com
+offers.ltsc-has.com
+offshoregeology.com
+ogads-pa.googleapis.com
+oglasi.posjetnica.com
+ogury.com
+ojrq.net
+omg10.com
+omnijay.com
+omniture.com
+omtrdc.net
+onaudience.com
+onclickads.net
+onegg.site
+onestat.com
+onestatfree.com
+online-metrix.net
+online.miarroba.com
+onlinecash.com
+onlinecashmethod.com
+onlinerewardcenter.com
+onlinestarten.net
+onscroll.com
+onthe.io
+opads.us
+open.oneplus.net
+openad.tf1.fr
+openad.travelnow.com
+openads.friendfinder.com
+openads.org
+openadsnetwork.com
+openbid.pubmatic.com
+openx.angelsgroup.org.uk
+openx.cairo360.com
+openx.net
+openx.skinet.cz
+openx.smcaen.fr
+openx2.kytary.cz
+operationchicken.com
+opienetwork.com
+opmnstr.com
+opoxv.com
+oppuz.com
+optimallimit.com
+optimizely.com
+optimost.com
+optionsnomad.com
+optmd.com
+optmnstr.com
+optmstr.com
+optnmstr.com
+optnx.com
+orbsrv.com
+orientedargument.com
+orionember.com
+ota.cartrawler.com
+otheve.beacon.qq.com
+otto-images.developershed.com
+ourdreamstaticpages.pages.dev
+outbrain.com
+outerwords.com
+overconfidentfood.com
+overkick.com
+overture.com
+ow.pubmatic.com
+owebmoney.ru
+owlsr.us
+owneriq.net
+oxado.com
+oxcash.com
+p-n.io
+p7cloud.net
+paa-reporting-advertising.amazon
+page-checker.eu
+pagead.l.google.com
+pagefair.com
+pagerank-ranking.de
+pageranktop.com
+painstakingpickle.com
+paleleaf.com
+panickypancake.com
+panoramicplane.com
+parachutehome.sjv.io
+parchedsofa.com
+parentpicture.com
+parsely.com
+parsimoniouspolice.com
+partner-ads.com
+partner.pelikan.cz
+partnerad.l.google.com
+partnerads.ysm.yahoo.com
+partnercash.de
+partnerhut.com
+partnerlinks.io
+partners.priceline.com
+partplanes.com
+passeura.com
+paychat.fuse-cloud.com
+paycounter.com
+paypopup.com
+pbnet.ru
+pbterra.com
+pc-tc.s3-eu-west-1.amazonaws.com
+pcash.imlive.com
+peep-auktion.de
+peer39.com
+pemsrv.com
+pennyweb.com
+pepperjamnetwork.com
+percentmobile.com
+perfectaudience.com
+perfiliate.com
+performancerevenue.com
+performancerevenues.com
+performancing.com
+permutive.com
+personagraph.com
+pgl.example.com
+pgl.example0101
+pgmediaserve.com
+pgpartner.com
+pheedo.com
+phoenix-adrunner.mycomputer.com
+pi.pdfjs.express
+piano.io
+pimproll.com
+ping.ublock.org
+pipedream.wistia.com
+pippio.com
+piquantpigs.com
+pix.spot.im
+pixel.sojern.com
+pixel.tapad.com
+pixel.watch
+pixel.yabidos.com
+placed.com
+placeframe.com
+placidactivity.com
+platc-tester.com
+plausible.avris.it
+plausibleio.workers.dev
+play4traffic.com
+playhaven.com
+pleasantpump.com
+plista.com
+plotrabbit.com
+pltraffic8.com
+pluckypocket.com
+plugrush.com
+pocketfaucet.com
+pocustrack.com
+poemprompt.com
+pointlessprofit.com
+pointroll.com
+pokkt.com
+polishedfolly.com
+polo.feathr.co
+pooinc-7dw.pages.dev
+popads.net
+popcash.net
+popmixradio.com
+popmyads.com
+popplantation.com
+popub.com
+popunhot1.blogspot.com
+popup.msn.com
+popupmoney.com
+popupnation.com
+popuptraffic.com
+porngraph.com
+porntrack.com
+possibleboats.com
+possiblepencil.com
+post.spmailtechno.com
+postback.iqm.com
+postrelease.com
+powerium.net
+ppc.adhere.marchex.com
+pr-star.de
+praddpro.de
+prchecker.info
+prebid.org
+predictad.com
+premium-offers.com
+presetrabbits.com
+prettyeasycafe.com
+previousplayground.com
+prf.hn
+priceypies.com
+pricklydebt.com
+prideproms.com
+primetime.net
+privatecash.com
+prmtracking.com
+pro-market.net
+probablepartner.com
+processplantation.com
+proext.com
+profero.com
+profitrumour.com
+programattik.com
+projectwonderful.com
+promo.badoink.com
+promobenef.com
+promos.bwin.it
+promos.fling.com
+promote.pair.com
+pronetadvertising.com
+propellerads.com
+propellerclick.com
+proper.io
+props.id
+protectcrev.com
+protectpool.com
+protectsubrev.com
+protestcopy.com
+proton-tm.com
+protraffic.com
+provenpixel.com
+prpops.com
+prsitecheck.com
+prufenzo.xyz
+pstmrk.it
+pub.chez.com
+pub.club-internet.fr
+pub.hardware.fr
+pub.network
+pub.realmedia.fr
+pubbug.com
+pubdirecte.com
+pubfuture-ssp.com
+publicidad.elmundo.es
+publicidees.com
+publicsofa.com
+pubmine.com
+pubnative.net
+puffyloss.com
+puffypaste.com
+puffypull.com
+puffypurpose.com
+pulse.genki.world
+pureclarity.net
+pushengage.com
+pushno.com
+pushtrack.co
+px.dynamicyield.com
+px.gfycat.com
+px.mountain.com
+pxf.io
+pxl-mailtracker.com
+pxl.iqm.com
+q.azcentral.com
+q1connect.com
+qa-analytics.com
+qctop.com
+ql.tc
+qnsr.com
+quantcast.com
+quantcount.com
+quantserve.com
+quantummetric.com
+quarterserver.de
+quickkoala.io
+quicktattoo.com
+quietknowledge.com
+quiltruler.com
+quinst.com
+quirkysugar.com
+quisma.com
+quizzicalzephyr.com
+r.drinksdirect.net
+r.logrocket.io
+r.marketing.dubaisothebys.com
+r.msn.com
+r.openai.com
+r.scoota.co
+r.sibmail.havasit.com
+r1.arts-mail.com
+r1.visualwebsiteoptimizer.com
+r2.visualwebsiteoptimizer.com
+r3.visualwebsiteoptimizer.com
+rabbitrifle.com
+rackforstorage.com
+radar.cedexis.com
+radiate.com
+radiateprose.com
+rads.realadmin.pl
+railwayreason.com
+rambunctiousflock.com
+rampidads.com
+randkuj.xyz
+rankchamp.de
+ranking-charts.de
+ranking-hits.de
+ranking-links.de
+rankingscout.com
+rankyou.com
+rapidcounter.com
+raresummer.com
+rate.ru
+rayjump.com
+rcadserver.com
+re-direct.pl
+reachjunction.com
+reactx.com
+readingguilt.com
+readymoon.com
+realclever.com
+realclix.com
+realmedia-a800.d4p.net
+realsrv.com
+realtechnetwork.com
+realtracker.com
+rebelhen.com
+rebelswing.com
+rec5.visualwebsiteoptimizer.com
+recapture.io
+receptivereaction.com
+record.bonniergaming.com
+record.mrwin.com
+redirectingat.com
+redirectvoluum.com
+redrection.pro
+redshell.io
+reduxmedia.com
+referralware.com
+referrer.disqus.com
+regularplants.com
+reklam.rfsl.se
+reklama.mironet.cz
+reklamcsere.hu
+reklamdsp.com
+relmaxtop.com
+rememberdiscussion.com
+report-1.appmetrica.webvisor.com
+report-2.appmetrica.webvisor.com
+report-partners.appmetrica.yandex.net
+report.ap.yandex-net.ru
+report.appmetrica.yandex.net
+republika.onet.pl
+rescuerhino.com
+researchlog.dbresearch.com
+resonantbrush.com
+resonate.com
+responsiveads.com
+restrainstorm.com
+retargeter.com
+rev.iq
+revcatch.com
+revcontent.com
+reveal.clearbit.com
+revenuedirect.com
+revenuehits.com
+revive.haskovo.net
+revive.netriota.hu
+revive.plays.bg
+revprotect.com
+rexadvert.xyz
+reyden-x.com
+rhombusads.com
+rhythmone.com
+richaudience.com
+richmails.com
+richstring.com
+rightstats.com
+ringplant.com
+ringsrecord.com
+ritzyrepresentative.com
+rlcdn.com
+rle.ru
+rmads.msn.com
+rmedia.boston.com
+roaddynamics.com
+roar.com
+robotrefinery.com
+robotreplay.com
+rockabox.co
+rockagainst.com
+rockstarwriter.com
+roguephilosopher.com
+rok.com.com
+rollconnection.com
+ronracepub.com
+rose.ixbt.com
+rotabanner.com
+roxr.net
+rpt-ads.vidaahub.com
+rqtrk.eu
+rs6.net
+rsc-ads.vidaahub.com
+rsc-mntz.vidaahub.com
+rta.dailymail.co.uk
+rtb.gumgum.com
+rtbadzesto.com
+rtbflairads.com
+rtbplatform.net
+rtbpop.com
+rtmark.net
+rtxplatform.com
+ru4.com
+rubiconproject.com
+rum-http-intake.logs.datadoghq.com
+rum-http-intake.logs.datadoghq.eu
+rum-openway.guance.com
+rum.aliyuncs.com
+runads.com
+rundsp.com
+ruralrobin.com
+s.adroll.com
+s.click.aliexpress.com
+s.dmmew.com
+s.uuidksinc.net
+s20dh7e9dh.com
+s2d6.com
+sabio.us
+safeoffers.pro
+sail-horizon.com
+samplesamba.com
+samsungacr.com
+samsungads.com
+sanalytics.disneyplus.com
+sanity-dataplane.rudderstack.com
+savoryorange.com
+sbird.xyz
+sbx.pagesjaunes.fr
+sc-analytics.appspot.com
+scambiobanner.aruba.it
+scanscout.com
+scarcesign.com
+scaredsnakes.com
+scaredsong.com
+scarfsmash.com
+scatteredheat.com
+scintillatingscissors.com
+scintillatingsilver.com
+scissorsstatement.com
+scopelight.com
+scorecardresearch.com
+scratch2cash.com
+screechingfurniture.com
+screechingstocking.com
+screechingstove.com
+scrubswim.com
+sdk.51.la
+seadform.net
+searchmarketing.com
+searchramp.com
+secre.jp
+secretspiders.com
+secure.webconnect.net
+securedopen-bp.com
+securemetrics.apple.com
+securemetrics.apple.com.cn
+securityannex.net
+sedoparking.com
+sedotracker.com
+segment-cdn.producthunt.com
+selectivesummer.com
+semasio.net
+sendmepixel.com
+seraphichorizon.com
+serendipityecho.com
+serv0.com
+servclick1move.com
+serve.tercept.com
+servedby-buysellads.com
+servedbyadbutler.com
+servedbyopenx.com
+servethis.com
+services.hearstmags.com
+session.bugsnag.kindle.amazon.dev
+sessioncam.com
+sexcounter.com
+sexlist.com
+sextracker.com
+shadowmade.com
+shakegoldfish.com
+shareasale.com
+sharethrough.com
+shd247.click
+sher.index.hu
+shesubscriptions.com
+shinystat.com
+shinystat.it
+shiveringspot.com
+shiverscissors.com
+shockinggrass.com
+shoppingads.com
+showads.pubmatic.com
+shredform.com
+shrillspoon.com
+shxtrk.com
+sicksmash.com
+sidebar.angelfire.com
+signalayer.com
+signalszone.com
+sillyscrew.com
+silvermob.com
+simpleanalytics.io
+simplesafari.com
+simpli.fi
+simulateswing.com
+sincerebuffalo.com
+sinoa.com
+sitedataprocessing.com
+siteimproveanalytics.com
+siteimproveanalytics.io
+siteintercept.qualtrics.com
+sitemeter.com
+sixscissors.com
+sixsigmatraffic.com
+sizmek.com
+skimresources.com
+skisofa.com
+skroutza.skroutz.gr
+skylink.vn
+slimesupplies.net
+slopeaota.com
+smaato.com
+smart-data-systems.com
+smart-traffik.com
+smart-traffik.io
+smart4ads.com
+smartadserver.com
+smartclip.net
+smartlook.com
+smartstream.tv
+smartyads.com
+smashquartz.com
+smashsurprise.com
+smetrics.10daily.com.au
+smetrics.bestbuy.com
+smetrics.ctv.ca
+smetrics.fedex.com
+smetrics.foxnews.com
+smetrics.walgreens.com
+smetrics.washingtonpost.com
+smilewanted.com
+smilingcattle.com
+smoggysnakes.com
+smrtb.com
+snapads.com
+snazzypoodle.com
+snoobi.com
+socialspark.com
+softclick.com.br
+soggysponge.com
+soicos.com
+sombersea.com
+sombersquirrel.com
+sombersurprise.com
+somniture.stuff.co.nz
+somoaudience.com
+sonobi.com
+sourcepoint.vice.com
+sovrn.com
+sp-a-q-f.ib-game.jp
+spacash.com
+spaceleadster.com
+sparklingshelf.com
+sparkstudios.com
+speakol.com
+specificmedia.co.uk
+specificpop.com
+speedomizer.com
+speedshiftmedia.com
+spellingthoughts.com
+spezialreporte.de
+spiffymachine.com
+spinbox.techtracker.com
+spinbox.versiontracker.com
+spinnaker-js.com
+spirebaboon.com
+spl.zeotap.com
+sponsorads.de
+sponsorpro.de
+spookysleet.com
+spoonballoon.com
+spotlessstamp.com
+spotscenered.info
+spotx.tv
+spotxchange.com
+springserve.com
+sprysummit.com
+spulse.net
+spylog.com
+spywarelabs.com
+spywords.com
+srvmath.com
+srvtrck.com
+srwww1.com
+sshowads.pubmatic.com
+sskzlabs.com
+st.dynamicyield.com
+st.pubmatic.com
+stack-sonar.com
+stackadapt.com
+stakingsmile.com
+stalesummer.com
+starffa.com
+starrynets.com
+starsmarter.com
+startapp.com
+stat-track.com
+stat.cliche.se
+stat.dyna.ultraweb.hu
+stat.lianmeng.360.cn
+stat.pl
+stat.webmedia.pl
+stat.xiaomi.com
+stat.zenon.net
+stat24.com
+stat24.meta.ua
+statcounter.com
+statdynamic.com
+static-tracking.klaviyo.com
+static.etracker.com
+static.fmpub.net
+static.itrack.it
+static.kameleoon.com
+staticads.btopenworld.com
+statistik-gallup.net
+statm.the-adult-company.com
+stats.blogger.com
+stats.hyperinzerce.cz
+stats.in.th
+stats.merriam-webster.com
+stats.mirrorfootball.co.uk
+stats.nextgen-email.com
+stats.olark.com
+stats.pusher.com
+stats.rdphv.net
+stats.self.com
+stats.stb-ottow.de
+stats.townnews.com
+stats.wordpress.com
+stats.wp.com
+stats2.self.com
+stats4all.com
+statserv.net
+statsie.com
+statxpress.com
+steadfastsound.com
+steadfastsystem.com
+steelhouse.com
+steelhousemedia.com
+stickyadstv.com
+stiffgame.com
+stimulatingsneeze.com
+stomachscience.com
+stopstomach.com
+storetail.io
+storygize.net
+strack.pubmatic.com
+straightnest.com
+stretchsquirrel.com
+studycooking.com
+stupendoussleet.com
+stupendoussnow.com
+subscribe.hearstmags.com
+succeedscene.com
+successbuffet.com
+sugoicounter.com
+sulkycook.com
+summerobject.com
+sumo.com
+sumome.com
+sunsetcampfires.com
+superawesome.tv
+superchichair.com
+superclix.de
+supercounters.com
+superficialsquare.com
+supersonicads.com
+superstats.com
+supertop.ru
+supertop100.com
+supply.colossusssp.com
+supportwaves.com
+surveygizmobeacon.s3.amazonaws.com
+sw88.espn.com
+swan-swan-goose.com
+swankysquare.com
+swingslip.com
+swordgoose.com
+synonymoussticks.com
+systemssummit.com
+t.appsflyer.com
+t.bawafx.com
+t.carta.com
+t.co
+t.dtscdn.com
+t.eloqua.com
+t.email.superdrug.com
+t.en25.com
+t.firstpromoter.com
+t.insigit.com
+t.irtyd.com
+t.leady.com
+t.marketing.goindigo.in
+t.mmtrkr.com
+t.nc0.co
+t.news.browns-restaurants.co.uk
+t.notif-colissimo-laposte.info
+t.pie.org
+t.podcast.co
+t.pubmatic.com
+t.salesmatemail.com
+t.vacations.disneydestinations.com
+t.visit.disneydestinations.com
+t.visitorqueue.com
+t.x.co
+t1.rorystravelclub.co.uk
+t1.rorytravelclub-news.co.uk
+taboola.com
+tag-demo.mention-me.com
+tag.mention-me.com
+tagcommander.com
+tagger.opecloud.com
+tags.tiqcdn.com
+tagtoo.com
+tailsweep.com
+tailsweep.se
+takethatad.com
+tamgrt.com
+tangibleteam.com
+tangyamount.com
+tapad.com
+tapfiliate.com
+tapinfluence.com
+tapjoy.com
+tappx.com
+targad.de
+target.microsoft.com
+targeting.api.drift.com
+targeting.nzme.arcpublishing.com
+targeting.voxus.tv
+targetingnow.com
+targetnet.com
+targetpoint.com
+tatsumi-sys.jp
+tawdryson.com
+tcads.net
+teads.tv
+tealeaf.com
+tealium.cbsnews.com
+tealium.com
+tealiumiq.com
+tedioustooth.com
+teenrevenue.com
+telaria.com
+telemetry.dropbox.com
+telemetry.goodlifefitness.com
+telemetry.malwarebytes.com
+telemetry.v.dropbox.com
+temelio.com
+tend.io
+tendertest.com
+ter-jrnl-oc.vidaahub.com
+terriblethumb.com
+text-link-ads.com
+textad.sexsearch.com
+textads.biz
+textlinks.com
+tfag.de
+the-ozone-project.com
+theadex.com
+theadhost.com
+theadsparks.com
+thebicyclehut.com
+thebugs.ws
+thecrazychili.com
+themangotea.com
+themoneytizer.com
+therapistla.com
+thewavebeats.com
+thinkitten.com
+thirdparty.bnc.lt
+thirdrespect.com
+thomastorch.com
+throtle.io
+thruport.com
+thunderhead.com
+tia.timeinc.net
+ticketaunt.com
+ticklesign.com
+ticksel.com
+tics.techdirt.com
+tidaltv.com
+tidysprite.com
+tinybar.com
+tinybluewhale.com
+tinytendency.com
+tiresomethunder.com
+tkbo.com
+tls.telemetry.swe.quicinc.com
+tlvmedia.com
+tm.br.de
+tnkexchange.com
+tns-counter.ru
+toolforthought.com
+top-site-list.com
+top.list.ru
+top.mail.ru
+top100-images.rambler.ru
+top100.mafia.ru
+top123.ro
+top20free.com
+toplist.cz
+toplist.pornhost.com
+toplista.mw.hu
+toplistcity.com
+topsir.com
+topsites.com.br
+topstats.com
+totemcash.com
+touchclarity.com
+tour.brazzers.com
+tr.api.fanbyte.com
+tr.p.360.cn
+tracecontent.com
+track-eu.customer.io
+track-na2.hubspot.com
+track.adform.net
+track.anchorfree.com
+track.canva.com
+track.contently.com
+track.customer.io
+track.dws.com
+track.effiliation.com
+track.flexlinks.com
+track.flexlinkspro.com
+track.lettingaproperty.com
+track.mailalert.io
+track.mailerlite.com
+track.mediav.com
+track.miro.com
+track.nationalgunrights.org
+track.privacyatclearbit.com
+track.pubmatic.com
+track.segmetrics.io
+track.smtpmessage.com
+track.software-codes.com
+track.spe.schoolmessenger.com
+track.ultravpn.com
+track.unear.net
+track.vcdc.com
+track.viewdeos.com
+track.wewilltrcku.com
+track1.viewdeos.com
+trackalyzer.com
+trackedlink.net
+trackedweb.net
+tracker.bannerflow.com
+tracker.cdnbye.com
+tracker.colatv88xb.cc
+tracker.icerocket.com
+tracker.mmdlv.it
+tracker.optin-lead.com
+tracker.samplicio.us
+tracking.adstrategysites.com
+tracking.casheddy.com
+tracking.cybertips.uk
+tracking.epicgames.com
+tracking.gauchosurf.com
+tracking.hostgator.com
+tracking.hyros.com
+tracking.ibxlink.com
+tracking.intentsify.io
+tracking.intl.miui.com
+tracking.jiffyworld.com
+tracking.markethero.io
+tracking.miui.com
+tracking.netalerts.io
+tracking.olx-st.com
+tracking.orixa-media.com
+tracking.wetter.at
+tracking01.walmart.com
+tracking101.com
+tracking22.com
+trackingsoft.com
+trackmysales.com
+tradeadexchange.com
+tradedoubler.com
+traffic-exchange.com
+traffic.hyteck.de
+trafficfactory.biz
+trafficforce.com
+trafficholder.com
+traffichunt.com
+trafficjunky.net
+trafficleader.com
+trafficrouter.io
+trafficshop.com
+trafficspaces.net
+trafficstrategies.com
+trafficswarm.com
+trafficz.com
+traffiq.com
+trafic.ro
+tranquilplume.com
+travis.bosscasinos.com
+trck.a8.net
+trck.mtrgt.id
+trcklion.com
+treasuredata.com
+trekdata.com
+tremendoustime.com
+tremorhub.com
+trendcounter.com
+trendmd.com
+trialfire.com
+tribalfusion.com
+triplelift.com
+triptease.io
+trk.4ff.pro
+trk.bc.shutterfly.com
+trk.pinterest.com
+trk.techtarget.com
+trk1.avdlink.net
+trk42.net
+trkm.mg.thegoodybag.co.uk
+trkn.us
+trkoptimizer.com
+trkpnt.ongage.net
+trkweb.clinch.co
+trmit.com
+truckstomatoes.com
+truculentrate.com
+truehits.net
+truehits1.gits.net.th
+truehits2.gits.net.th
+trust.titanhq.com
+trustx.org
+tsa-f.webex.com
+tsa.webex.com
+tsyndicate.com
+tsyndicate.net
+tubemogul.com
+tumbleicicle.com
+turboadv.com
+turn.com
+twelvedawn.com
+twisty.net
+twittad.com
+twyn.com
+tynt.com
+typicalteeth.com
+tyroo.com
+uarating.com
+ucfunnel.com
+udkcrj.com
+udncoeln.com
+uib.ff.avast.com
+ukoffzeh.com
+ultimateclixx.com
+ultramercial.com
+ultraoranges.com
+unaccountablepie.com
+unarmedindustry.com
+unbecominglamp.com
+understoodocean.com
+undertone.com
+unidentifiedanalytics.web.app
+unloadyourself.com
+unruly.co
+unrulymedia.com
+untd.com
+unusualtitle.com
+unwieldyhealth.com
+unwieldyimpulse.com
+upgradeyoga.com
+upu.samsungelectronics.com
+urbanlaurel.com
+url9467.comms-2.zoopla.co.uk
+urlcash.net
+us.a1.yimg.com
+userreplay.com
+users.maxcluster.net
+utils.mediageneral.net
+utl-1.com
+uu.domainforlite.com
+v1.cnzz.com
+v1adserver.com
+valerie.forbes.com
+validclick.com
+valuead.com
+valueclick.com
+valueclickmedia.com
+valuecommerce.com
+vanfireworks.com
+vcommission.com
+veille-referencement.com
+velismedia.com
+vengefulgrass.com
+ventivmedia.com
+venturead.com
+vericlick.com
+vertamedia.com
+verticalmass.com
+vervewireless.com
+verybark.com
+vgnp3trk.com
+vibrantsundown.com
+vid.pubmatic.com
+vidcpm.com
+video-stats.video.google.com
+videoadex.com
+videoadstech.org
+videoegg.com
+vidora.com
+view4cash.de
+viglink.com
+vilenexus.com
+virtualvincent.com
+visiblemeasures.com
+visistat.com
+visitbox.de
+visual-pagerank.fr
+visualrevenue.com
+vivads.net
+vmmpxl.com
+voicefive.com
+volasim.com
+volatilevessel.com
+voluum.com
+voluumtrk2.com
+vpon.com
+vrs.cz
+vtracy.de
+vungle.com
+w55c.net
+wa.and.co.uk
+waardex.com
+warmafterthought.com
+washbanana.com
+wdads.sx.atl.publicus.com
+wdfl.co
+web-stat.com
+web.informer.com
+web2.deja.com
+webads.co.nz
+webads.nl
+webanalytics.zohodcm.com
+webcash.nl
+webcontentassessor.com
+webcounter.cz
+webcounter.goweb.de
+webgains.com
+webiqonline.com
+weborama.com
+weborama.fr
+webpower.com
+webreseau.com
+webseoanalytics.com
+webstat.channel4.com
+webstat.com
+webstat.net
+webtrackerplus.com
+webtraffic.se
+webtraxx.de
+webxcdn.com
+werbung.meteoxpress.com
+wetrack.it
+whaleads.com
+wheredoyoucomefrom.ovh
+whirlwealth.com
+whiskyqueue.com
+whisperingcascade.com
+whisperingcrib.com
+whisperingsummit.com
+whoisonline.net
+wholepagecache.com
+wickedreports.com
+widget.educationdynamics.com
+widget.privy.com
+widgets.teads-xo.com
+wikia-ads.wikia.com
+wikiquotations.com
+win.iqm.com
+window.nixnet.cz
+wintricksbanner.googlepages.com
+wirecomic.com
+wisepops.com
+witch-counter.de
+wittypopcorn.com
+wizaly.com
+wl.spotify.com
+wlmarketing.com
+wondoads.de
+woopra.com
+worldrealize.com
+worldwide-cash.net
+worriednumber.com
+wowfunnow.com
+writerhubs.com
+wt-eu02.net
+wt.bankmillennium.pl
+www-banner.chat.ru
+www-google-analytics.l.google.com
+www.dnps.com
+www.kaplanindex.com
+www.photo-ads.co.uk
+www8.glam.com
+wwwpromoter.com
+x-traceur.com
+x6.yakiuchi.com
+xad.com
+xapads.com
+xchange.ro
+xdrig.com
+xertive.com
+xfreeservice.com
+xg4ken.com
+xiti.com
+xml-v4.oceanfall.xyz
+xplusone.com
+xponsor.com
+xpu.samsungelectronics.com
+xq1.net
+xtendmedia.com
+xtracker.logimeter.com
+xxxcounter.com
+xxxmyself.com
+y.ibsys.com
+yab-adimages.s3.amazonaws.com
+yadro.ru
+yads.tech
+yandexmetrica.com
+yepads.com
+yesads.com
+yesadvertising.com
+yg5sjx5kzy.com
+yieldads.com
+yieldlab.net
+yieldmanager.net
+yieldmo.com
+yieldoptimizer.com
+yieldtraffic.com
+ymetrica1.com
+yoads.net
+yoggrt.com
+youcandrawanything.com
+youradexchange.com
+ypu.samsungelectronics.com
+zangocash.com
+zanox-affiliate.de
+zanox.com
+zantracker.com
+zarget.com
+zdbb.net
+zedo.com
+zemanta.com
+zencudo.co.uk
+zenzuu.com
+zephyrlabyrinth.com
+zeus.developershed.com
+zeusclicks.com
+zeydoo.com
+zion-telemetry.api.cnn.io
+zippingcare.com
+zlp6s.pw
+zm232.com
+zmedia.com
+zonewedgeshaft.com
+zpu.samsungelectronics.com
+zqtk.net
+zzhc.vnet.cn
 ```
 
 ---
 
-### 4.71 `README.md`
+### Arquivo: `README.md`
 
 ```markdown
 # Dragon Desktop (Electron Vanilla)
@@ -19873,7 +24683,5 @@ O Dragon conta com mitigação avançada de fingerprinting multivetorial inspira
 - **Validação de Consistência Interna**: Impede combinações impossíveis (ex.: macOS com GPUs NVIDIA é estritamente bloqueado) e alerta sobre configurações incomuns.
 - **Botão "Resetar Fingerprint"**: Sorteia uma nova semente de 32 bits e gera uma identidade completamente nova e coerente com um clique, recarregando automaticamente todas as abas web abertas.
 - **Determinismo e Isolamento**: O ruído permanece perfeitamente estável durante a mesma sessão. Injeção restrita a páginas web (`http:` e `https:`), nunca tocando páginas internas do navegador.
+
 ```
-
----
-
