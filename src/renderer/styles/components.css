@@ -1393,6 +1393,316 @@ body.html-fullscreen #app {
   color: var(--color-text-primary);
 }
 
+/* =============================================================================
+   15. PARTE B - EMBELEZAMENTO DOS POPUPS E DIÁLOGOS DA INTERFACE
+   ============================================================================= */
+
+/* --- Overlays de Diálogo Centralizados com Efeito Blur --- */
+#permission-sheet-overlay,
+#download-risk-overlay,
+#fire-sheet-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: var(--dialog-backdrop);
+  backdrop-filter: blur(6px) saturate(120%);
+  -webkit-backdrop-filter: blur(6px) saturate(120%);
+  padding: 16px;
+  box-sizing: border-box;
+}
+
+#permission-sheet-overlay.visible,
+#download-risk-overlay.visible,
+#fire-sheet-overlay.visible {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+/* --- Cartão de Diálogo (Permissão, Download de Risco, Apagar Tudo) --- */
+#permission-sheet-panel,
+#download-risk-panel,
+#fire-sheet-panel {
+  position: relative;
+  width: calc(100% - 32px);
+  max-width: 440px;
+  margin: auto;
+  padding: 26px 26px 22px;
+  background-color: var(--dialog-bg);
+  border: 1px solid var(--dialog-border);
+  border-radius: 18px;
+  box-shadow: var(--dialog-shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-sizing: border-box;
+  animation: none;
+  opacity: 0;
+  transform: translateY(10px) scale(0.97);
+  transition: opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1), transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Transição de entrada suave para a posição final */
+#permission-sheet-overlay.visible #permission-sheet-panel,
+#download-risk-overlay.visible #download-risk-panel,
+#fire-sheet-overlay.visible #fire-sheet-panel,
+#fire-sheet-panel.visible {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+/* Suporte à acessibilidade para redução de movimento */
+@media (prefers-reduced-motion: reduce) {
+  #permission-sheet-panel,
+  #download-risk-panel,
+  #fire-sheet-panel {
+    transition: none !important;
+    transform: none !important;
+  }
+}
+
+/* --- Cabeçalho em Coluna e Centralizado --- */
+.perm-header,
+.fire-sheet-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 14px;
+}
+
+.perm-header > div:last-child,
+.fire-sheet-header > div:last-child {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+/* Ícone central 52x52 com raio 16px e svg 26px */
+.perm-icon,
+.fire-sheet-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: none;
+}
+
+.perm-icon svg,
+.fire-sheet-icon svg {
+  width: 26px;
+  height: 26px;
+}
+
+/* Ícone de solicitação de permissão */
+#perm-icon-wrap {
+  background: rgba(77, 124, 255, 0.14);
+  color: var(--color-accent);
+}
+
+/* Ícone de download com risco de execução */
+.perm-icon.risk-warning-icon {
+  background: rgba(239, 68, 68, 0.14) !important;
+  color: var(--danger) !important;
+}
+
+/* Ícone do Dragão Azul (Apagar Tudo) */
+.fire-sheet-icon {
+  background: rgba(1, 148, 255, 0.14);
+  color: var(--fire-mid);
+}
+
+.fire-sheet-icon svg {
+  fill: var(--fire-mid);
+}
+
+/* Título do Diálogo: 17px, peso 650 */
+.perm-title,
+.fire-sheet-title {
+  font-size: 17px;
+  font-weight: 650;
+  color: var(--color-text-primary);
+  margin: 0;
+  text-align: center;
+  line-height: 1.35;
+}
+
+/* Texto descritivo: 13.5px, line-height 1.55, cor secundária */
+.perm-desc,
+.fire-sheet-desc {
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--color-text-secondary);
+  text-align: center;
+  margin: 0;
+}
+
+.risk-highlight {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+/* --- Linha do Checkbox como Pílula Centralizada --- */
+.perm-remember-row,
+.fire-sheet-checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  margin: 0 auto;
+  padding: 8px 16px;
+  background: rgba(127, 127, 127, 0.08);
+  border-radius: 12px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  gap: 8px;
+  user-select: none;
+  transition: background-color var(--transition-fast);
+}
+
+.perm-remember-row:hover,
+.fire-sheet-checkbox-label:hover {
+  background: rgba(127, 127, 127, 0.14);
+}
+
+.perm-remember-row input[type="checkbox"],
+.fire-sheet-checkbox-label input[type="checkbox"] {
+  accent-color: var(--color-accent);
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  margin: 0;
+}
+
+.fire-sheet-options {
+  display: flex;
+  justify-content: center;
+  margin: 0;
+}
+
+/* --- Botões de Ação em Grid de 2 Colunas --- */
+.perm-actions,
+.fire-sheet-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 6px;
+  width: 100%;
+}
+
+.perm-actions button,
+.fire-sheet-actions button {
+  height: 42px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border: none;
+  outline: none;
+  padding: 0 14px;
+  transition: filter var(--transition-fast), background-color var(--transition-fast), color var(--transition-fast);
+  box-sizing: border-box;
+}
+
+.perm-actions button:hover,
+.fire-sheet-actions button:hover {
+  filter: brightness(1.12);
+}
+
+.perm-actions button:focus-visible,
+.fire-sheet-actions button:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* Botões Secundários */
+.btn-perm-block,
+.btn-fire-cancel {
+  background-color: rgba(127, 127, 127, 0.12) !important;
+  color: var(--color-text-primary) !important;
+  border: none !important;
+}
+
+/* Botão Primário (Permitir) */
+.btn-perm-allow {
+  background-color: var(--color-accent) !important;
+  color: #ffffff !important;
+}
+
+/* Download de Risco: Primário = Cancelar download, Secundário = Continuar com texto --danger */
+.btn-risk-cancel {
+  background-color: var(--color-accent) !important;
+  color: #ffffff !important;
+}
+
+.btn-risk-continue {
+  background-color: rgba(127, 127, 127, 0.12) !important;
+  color: var(--danger) !important;
+  border: none !important;
+}
+
+/* Apagar Tudo: Primário com gradiente e glow */
+.btn-fire-confirm {
+  background: linear-gradient(135deg, var(--fire-mid), var(--fire-main)) !important;
+  color: #ffffff !important;
+  box-shadow: 0 4px 14px var(--fire-glow);
+}
+
+/* --- Escudo de Privacidade --- */
+#shield-panel-backdrop {
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  background: var(--dialog-backdrop);
+}
+
+#shield-panel {
+  background-color: var(--dialog-bg);
+  border: 1px solid var(--dialog-border);
+  box-shadow: var(--dialog-shadow);
+  border-radius: 16px;
+}
+
+body.theme-light .shield-panel-header {
+  background-color: rgba(0, 0, 0, 0.03);
+}
+
+/* --- Toast Flutuante --- */
+#fire-toast {
+  background-color: var(--dialog-bg);
+  border: 1px solid var(--dialog-border);
+  box-shadow: var(--dialog-shadow);
+  border-radius: var(--radius-pill);
+  color: var(--color-text-primary);
+}
+
+/* --- Omnibox (Dropdown de Sugestões) --- */
+#omnibox-dropdown {
+  background-color: var(--dialog-bg);
+  border: 1px solid var(--dialog-border);
+  box-shadow: var(--dialog-shadow);
+  border-radius: 16px;
+}
+
+body.theme-light .omnibox-item {
+  border-bottom-color: rgba(0, 0, 0, 0.05);
+}
+
+/* --- Barra de Busca na Página (Ctrl+F) --- */
+#find-bar {
+  background-color: var(--dialog-bg);
+  border: 1px solid var(--dialog-border);
+  border-top: none;
+  box-shadow: var(--dialog-shadow);
+  border-radius: 0 0 14px 14px;
+}
+
 
 
 
