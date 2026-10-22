@@ -167,6 +167,17 @@ function init(context) {
     return false;
   });
 
+  // CANAL: window:set-redirect-bar-open
+  // Notifica o windowManager para reservar espaço abaixo da topbar para a barra de redirecionamento bloqueado
+  ipcMain.handle('window:set-redirect-bar-open', (event, open) => {
+    if (!isMainSender(event, mainWindow)) return false;
+    if (windowManager && typeof windowManager.setRedirectBarOpen === 'function') {
+      windowManager.setRedirectBarOpen(Boolean(open));
+      return true;
+    }
+    return false;
+  });
+
   // Notifica o renderer e a aba de configurações sempre que houver alteração
   settings.onChange((key, value, allSettings) => {
     if (mainWindow && !mainWindow.isDestroyed()) {

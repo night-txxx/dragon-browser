@@ -126,6 +126,9 @@ class ToolbarComponent {
       this.redirectBar.hidden = false;
       this.redirectBar.classList.add('visible');
     }
+    if (window.browserAPI && typeof window.browserAPI.setRedirectBarOpen === 'function') {
+      window.browserAPI.setRedirectBarOpen(true);
+    }
     if (this.redirectDismissTimer) {
       clearTimeout(this.redirectDismissTimer);
     }
@@ -143,6 +146,9 @@ class ToolbarComponent {
     if (this.redirectBar) {
       this.redirectBar.hidden = true;
       this.redirectBar.classList.remove('visible');
+    }
+    if (window.browserAPI && typeof window.browserAPI.setRedirectBarOpen === 'function') {
+      window.browserAPI.setRedirectBarOpen(false);
     }
   }
 

@@ -14,12 +14,15 @@ const overlayOwners = new Set();
 let isHtmlFullScreen = false;
 let isFindBarOpen = false;
 const FIND_BAR_HEIGHT = 44;
+let isRedirectBarOpen = false;
+const REDIRECT_BAR_HEIGHT = 38;
 let wasWindowFullScreenBeforeVideo = false;
 
 /**
  * Atualiza as coordenadas e dimensões da WebContentsView da aba ativa.
  * Em modo normal: a interface do navegador ocupa os primeiros config.TOP_BAR_HEIGHT pixels no topo.
- * Se a barra de busca (Ctrl+F) estiver aberta, desloca a visualização para baixo para abrir espaço visível.
+ * Se a barra de busca (Ctrl+F) ou a barra de redirecionamento bloqueado estiverem abertas,
+ * desloca a visualização para baixo para abrir espaço visível.
  * Em modo tela cheia HTML5 (vídeo): a view ocupa a janela inteira a partir do topo (y = 0).
  */
 function updateActiveViewBounds() {
@@ -30,7 +33,8 @@ function updateActiveViewBounds() {
 
   // getContentBounds retorna as dimensões da área útil da janela (descontando bordas do SO)
   const { width, height } = mainWindow.getContentBounds();
-  const topOffset = isHtmlFullScreen ? 0 : (config.TOP_BAR_HEIGHT + (isFindBarOpen ? FIND_BAR_HEIGHT : 0));
+  const extraOffset = (isFindBarOpen ? FIND_BAR_HEIGHT : 0) + (isRedirectBarOpen ? REDIRECT_BAR_HEIGHT : 0);
+  const topOffset = isHtmlFullScreen ? 0 : (config.TOP_BAR_HEIGHT + extraOffset);
   const contentHeight = isHtmlFullScreen ? height : Math.max(0, height - topOffset);
 
   activeTab.view.setBounds({
@@ -56,6 +60,23 @@ function setFindBarOpen(open) {
  */
 function getIsFindBarOpen() {
   return isFindBarOpen;
+}
+
+/**
+ * Define se a barra de aviso de redirecionamento bloqueado está aberta e ajusta a visualização
+ * @param {boolean} open
+ */
+function setRedirectBarOpen(open) {
+  isRedirectBarOpen = Boolean(open);
+  updateActiveViewBounds();
+}
+
+/**
+ * Retorna se a barra de redirecionamento bloqueado está aberta
+ * @returns {boolean}
+ */
+function getIsRedirectBarOpen() {
+  return isRedirectBarOpen;
 }
 
 /**
@@ -216,6 +237,8 @@ function init(context) {
     getIsHtmlFullScreen,
     setFindBarOpen,
     getIsFindBarOpen,
+    setRedirectBarOpen,
+    getIsRedirectBarOpen,
     showOverlay,
     hideOverlay,
     getIsOverlayActive,
@@ -235,6 +258,8 @@ module.exports = {
   getIsHtmlFullScreen,
   setFindBarOpen,
   getIsFindBarOpen,
+  setRedirectBarOpen,
+  getIsRedirectBarOpen,
   showOverlay,
   hideOverlay,
   getIsOverlayActive

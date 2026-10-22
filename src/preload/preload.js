@@ -35,6 +35,7 @@ contextBridge.exposeInMainWorld('browserAPI', {
   findInPage: (text, forward = true, findNext = false) => ipcRenderer.invoke('search:find', { text, forward, findNext }),
   stopFindInPage: (action = 'clearSelection') => ipcRenderer.invoke('search:stop', action),
   setFindBarOpen: (open) => ipcRenderer.invoke('window:set-findbar-open', open),
+  setRedirectBarOpen: (open) => ipcRenderer.invoke('window:set-redirect-bar-open', open),
 
   // --- Sugestões na Barra de Endereço (Omnibox) ---
   getOmniboxSuggestions: (query) => ipcRenderer.invoke('omnibox:suggestions', query),
