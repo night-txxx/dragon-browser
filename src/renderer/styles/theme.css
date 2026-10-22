@@ -77,6 +77,13 @@
   --private-tab-bg: #211c2e;
   --private-tab-active-bg: #2d2442;
   --private-icon-color: #b088ff;
+
+  /* --- Diálogos, Modais e Popups (Parte B) --- */
+  --dialog-bg: #23232b;
+  --dialog-border: rgba(255, 255, 255, 0.08);
+  --dialog-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  --dialog-backdrop: rgba(8, 10, 20, 0.62);
+  --danger: #ef4444;
 }
 
 /* --- Suporte ao Tema Claro --- */
@@ -95,5 +102,12 @@ body.theme-light {
   --color-border-subtle: #d0d2de;
   --private-tab-bg: #ece6f6;
   --private-tab-active-bg: #ffffff;
+
+  /* --- Diálogos, Modais e Popups (Parte B - Tema Claro) --- */
+  --dialog-bg: #ffffff;
+  --dialog-border: rgba(0, 0, 0, 0.08);
+  --dialog-shadow: 0 24px 60px rgba(20, 24, 40, 0.25);
+  --dialog-backdrop: rgba(30, 34, 50, 0.35);
+  --danger: #ef4444;
 }
 
