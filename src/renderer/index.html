@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: http:;">
+  <title>Dragon</title>
+  <!-- Estilos carregados na ordem correta: Tema -> Base -> Componentes -->
+  <link rel="stylesheet" href="styles/theme.css">
+  <link rel="stylesheet" href="styles/base.css">
+  <link rel="stylesheet" href="styles/components.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Linha 1: Barra de Abas -->
+    <header id="tabs-bar">
+      <div id="tabs-container"></div>
+      <button id="btn-new-tab" title="Nova aba (Ctrl+T)" aria-label="Nova aba">
+        <svg viewBox="0 0 16 16">
+          <path fill="currentColor" d="M8 2a.75.75 0 0 1 .75.75v4.5h4.5a.75.75 0 0 1 0 1.5h-4.5v4.5a.75.75 0 0 1-1.5 0v-4.5h-4.5a.75.75 0 0 1 0-1.5h4.5v-4.5A.75.75 0 0 1 8 2z"/>
+        </svg>
+      </button>
+    </header>
+
+    <!-- Linha 2: Barra de Navegação e Endereço -->
+    <nav id="nav-bar">
+      <div id="nav-controls">
+        <button id="btn-back" class="nav-btn" title="Voltar (Alt+←)" aria-label="Voltar" disabled>
+          <svg viewBox="0 0 16 16">
+            <path fill="currentColor" d="M7.78 12.53a.75.75 0 0 1-1.06 0L2.47 8.28a.75.75 0 0 1 0-1.06l4.25-4.25a.75.75 0 0 1 1.06 1.06L4.81 7.25h8.44a.75.75 0 0 1 0 1.5H4.81l2.97 2.97a.75.75 0 0 1 0 1.06z"/>
+          </svg>
+        </button>
+        <button id="btn-forward" class="nav-btn" title="Avançar (Alt+→)" aria-label="Avançar" disabled>
+          <svg viewBox="0 0 16 16">
+            <path fill="currentColor" d="M8.22 3.47a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06l2.97-2.97H2.75a.75.75 0 0 1 0-1.5h8.44l-2.97-2.97a.75.75 0 0 1 0-1.06z"/>
+          </svg>
+        </button>
+        <button id="btn-reload" class="nav-btn" title="Recarregar (Ctrl+R ou F5)" aria-label="Recarregar">
+          <svg viewBox="0 0 16 16">
+            <path fill="currentColor" d="M1.705 8.001a6.3 6.3 0 0 1 10.7-4.47l.825-.824a.5.5 0 0 1 .854.354V6.5a.5.5 0 0 1-.5.5H10.14a.5.5 0 0 1-.354-.854l.872-.871a4.8 4.8 0 1 0 1.488 3.726.75.75 0 1 1 1.498.087 6.3 6.3 0 0 1-11.94.413z"/>
+          </svg>
+        </button>
+        <button id="btn-home" class="nav-btn" title="Página Inicial (Alt+Home)" aria-label="Página Inicial">
+          <svg viewBox="0 0 16 16">
+            <path fill="currentColor" d="M8.354 1.146a.5.5 0 0 0-.708 0l-6 6A.5.5 0 0 0 2 7.5v7a.5.5 0 0 0 .5.5h4.5a.5.5 0 0 0 .5-.5v-4h1v4a.5.5 0 0 0 .5.5h4.5a.5.5 0 0 0 .5-.5v-7a.5.5 0 0 0-.146-.354L8.354 1.146zM2.5 14V7.707l5.5-5.5 5.5 5.5V14H10v-4a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1v4H2.5z"/>
+          </svg>
+        </button>
+      </div>
+
+      <form id="address-form" autocomplete="off">
+        <!-- Escudo de Privacidade à esquerda do endereço (estilo DuckDuckGo) -->
+        <button
+          type="button"
+          id="btn-privacy-shield"
+          class="privacy-shield-btn"
+          title="Proteção de privacidade contra rastreadores"
+          aria-label="Proteção de privacidade contra rastreadores"
+        >
+          <svg viewBox="0 0 16 16" class="shield-icon-svg">
+            <path fill="currentColor" d="M8 0c-.26 0-.51.1-.7.29L2.24 5.35c-.15.15-.24.36-.24.58v4.57c0 3.2 2.37 5.09 5.76 5.48.16.02.32.02.48 0 3.39-.39 5.76-2.28 5.76-5.48V5.93c0-.22-.09-.43-.24-.58L8.7 0.29C8.51 0.1 8.26 0 8 0zm0 1.5l4.5 4.5v4.5c0 2.4-1.7 3.8-4.5 4.19-2.8-.39-4.5-1.79-4.5-4.19V6l4.5-4.5z"/>
+          </svg>
+          <span id="shield-badge" class="shield-badge">0</span>
+        </button>
+        <input
+          id="address-input"
+          type="text"
+          placeholder="Pesquisar no DuckDuckGo ou digitar endereço da web"
+          spellcheck="false"
+        />
+        <!-- Botão de Favoritar Página (Ctrl+D) -->
+        <button
+          type="button"
+          id="btn-bookmark"
+          class="bookmark-btn"
+          title="Favoritar esta página (Ctrl+D)"
+          aria-label="Favoritar esta página"
+        >
+          <svg viewBox="0 0 16 16">
+            <path d="M3.612 15.443c-.386.198-.824-.149-.746-.592l.83-4.73L.173 6.765c-.329-.314-.158-.888.283-.95l4.898-.696L7.538.792c.197-.39.73-.39.927 0l2.184 4.327 4.898.696c.441.062.612.636.282.95l-3.522 3.356.83 4.73c.078.443-.36.79-.746.592L8 13.187l-4.389 2.256z"/>
+          </svg>
+        </button>
+        <!-- Dropdown de sugestões da Omnibox -->
+        <div id="omnibox-dropdown" class="omnibox-dropdown"></div>
+      </form>
+
+      <!-- Botão de Downloads (Ctrl+J) -->
+      <button
+        id="btn-downloads"
+        class="nav-btn"
+        title="Downloads (Ctrl+J)"
+        aria-label="Downloads (Ctrl+J)"
+      >
+        <svg viewBox="0 0 16 16">
+          <path fill="currentColor" d="M.5 9.9a.75.75 0 0 1 .75.75v2.6c0 .414.336.75.75.75h12a.75.75 0 0 0 .75-.75v-2.6a.75.75 0 0 1 1.5 0v2.6A2.25 2.25 0 0 1 14 15.5H2A2.25 2.25 0 0 1-.25 13.25v-2.6A.75.75 0 0 1 .5 9.9z"/>
+          <path fill="currentColor" d="M7.47 10.53a.75.75 0 0 0 1.06 0l3.25-3.25a.75.75 0 1 0-1.06-1.06L8.75 8.19V1.75a.75.75 0 0 0-1.5 0v6.44L5.28 6.22a.75.75 0 0 0-1.06 1.06l3.25 3.25z"/>
+        </svg>
+      </button>
+
+      <!-- Botão de Apagar Tudo (O Fogo do Dragão Azul) -->
+      <button
+        id="btn-fire"
+        class="fire-btn"
+        title="Apagar tudo (Ctrl+Shift+Delete)"
+        aria-label="Apagar tudo (Ctrl+Shift+Delete)"
+      >
+        <svg viewBox="0 0 24 24">
+          <defs>
+            <linearGradient id="dragon-flame-grad" x1="0%" y1="100%" x2="50%" y2="0%">
+              <stop offset="0%" stop-color="#0A2A9E" />
+              <stop offset="30%" stop-color="#0194FF" />
+              <stop offset="70%" stop-color="#29B6FF" />
+              <stop offset="100%" stop-color="#E6F7FF" />
+            </linearGradient>
+          </defs>
+          <path
+            fill="url(#dragon-flame-grad)"
+            d="M12 2c-.3 1.8-1.5 3.3-2.6 4.7-1.4 1.8-2.8 3.7-2.9 6.1-.1 3.5 2.7 6.4 6.2 6.5 3.6.1 6.5-2.8 6.5-6.4 0-2.4-1.3-4.6-2.5-6.6-1-1.6-1.9-3.3-2.2-5.2-.1-.4-.6-.6-.9-.3-.5.7-.9 1.5-1.2 2.3-.6 1.4-1.6 2.6-1.5 4.2.1 1.2.9 2.2 2.1 2.3 1.2.1 2.2-.8 2.2-2 0-.6-.2-1.2-.5-1.7-.1-.2.1-.5.3-.4 1.2 1 1.9 2.4 1.9 4 0 2.8-2.2 5-5 5s-5-2.2-5-5c0-1.8.8-3.4 1.9-4.5 1-1 2.1-2.1 2.6-3.4.4-1.1.5-2.3.4-3.5-.1-.4-.5-.6-.8-.4z"
+          />
+        </svg>
+      </button>
+
+      <!-- Botão de Configurações (Engrenagem) -->
+      <button
+        id="btn-settings"
+        class="nav-btn"
+        title="Configurações (Ctrl+,)"
+        aria-label="Configurações (Ctrl+,)"
+      >
+        <svg viewBox="0 0 16 16">
+          <path fill="currentColor" d="M8 4.75a3.25 3.25 0 1 0 0 6.5 3.25 3.25 0 0 0 0-6.5zM6.25 8a1.75 1.75 0 1 1 3.5 0 1.75 1.75 0 0 1-3.5 0z"/>
+          <path fill="currentColor" fill-rule="evenodd" d="M7.05.5a1.25 1.25 0 0 1 1.9 0l.47.53c.24.27.6.42.96.4.37-.02.73-.2 1-.49l.4-.38a1.25 1.25 0 0 1 1.77.16l1.06 1.24a1.25 1.25 0 0 1-.09 1.77l-.42.36a1.4 1.4 0 0 0-.44.94c-.03.37.1.73.34 1.01l.36.42a1.25 1.25 0 0 1 0 1.63l-.36.42a1.4 1.4 0 0 0-.34 1.01c.02.37.18.72.44.94l.42.36a1.25 1.25 0 0 1 .09 1.77l-1.06 1.24a1.25 1.25 0 0 1-1.77.16l-.4-.38a1.4 1.4 0 0 0-1-.49c-.36-.02-.72.13-.96.4l-.47.53a1.25 1.25 0 0 1-1.9 0l-.47-.53a1.4 1.4 0 0 0-.96-.4 1.4 1.4 0 0 0-1 .49l-.4.38a1.25 1.25 0 0 1-1.77-.16l-1.06-1.24a1.25 1.25 0 0 1 .09-1.77l.42-.36c.26-.22.42-.57.44-.94.02-.37-.11-.73-.34-1.01l-.36-.42a1.25 1.25 0 0 1 0-1.63l.36-.42c.23-.28.36-.64.34-1.01a1.4 1.4 0 0 0-.44-.94l-.42-.36a1.25 1.25 0 0 1-.09-1.77l1.06-1.24a1.25 1.25 0 0 1 1.77-.16l.4.38c.27.29.63.47 1 .49.36.02.72-.13.96-.4L7.05.5z"/>
+        </svg>
+      </button>
+    </nav>
+  </div>
+
+  <!-- Barra de Aviso Não-Intrusivo de Redirecionamento Bloqueado (ETAPA 1) -->
+  <div id="redirect-blocked-bar" class="redirect-blocked-bar" hidden>
+    <div class="redirect-bar-content">
+      <svg class="redirect-bar-icon" viewBox="0 0 16 16">
+        <path fill="currentColor" d="M8 0c-.26 0-.51.1-.7.29L2.24 5.35c-.15.15-.24.36-.24.58v4.57c0 3.2 2.37 5.09 5.76 5.48.16.02.32.02.48 0 3.39-.39 5.76-2.28 5.76-5.48V5.93c0-.22-.09-.43-.24-.58L8.7 0.29C8.51 0.1 8.26 0 8 0zm0 1.5l4.5 4.5v4.5c0 2.4-1.7 3.8-4.5 4.19-2.8-.39-4.5-1.79-4.5-4.19V6l4.5-4.5z"/>
+      </svg>
+      <span id="redirect-blocked-text" class="redirect-bar-text">Redirecionamento bloqueado — exemplo.com</span>
+    </div>
+    <div class="redirect-bar-actions">
+      <button id="btn-allow-redirect" class="btn-allow-redirect">Permitir mesmo assim</button>
+      <button id="btn-dismiss-redirect" class="btn-dismiss-redirect" title="Dispensar aviso" aria-label="Dispensar aviso">✕</button>
+    </div>
+  </div>
+
+  <!-- Barra de Busca na Página (Ctrl+F) -->
+  <div id="find-bar">
+    <input type="text" id="find-input" class="find-input" placeholder="Buscar na página..." />
+    <span id="find-count" class="find-count"></span>
+    <button type="button" id="find-prev" class="find-btn" title="Anterior (Shift+Enter)">
+      <svg viewBox="0 0 16 16"><path d="M8 3.5l4 4H9.5V13h-3V7.5H4l4-4z"/></svg>
+    </button>
+    <button type="button" id="find-next" class="find-btn" title="Próximo (Enter)">
+      <svg viewBox="0 0 16 16"><path d="M8 12.5l-4-4h2.5V3h3v5.5H12l-4 4z"/></svg>
+    </button>
+    <button type="button" id="find-close" class="find-btn" title="Fechar (Esc)">
+      <svg viewBox="0 0 16 16"><path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.75.75 0 1 1 1.06 1.06L9.06 8l3.22 3.22a.75.75 0 1 1-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 0 1-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06z"/></svg>
+    </button>
+  </div>
+
+  <!-- Modal de Solicitação de Permissões por Site (Bottom Sheet) -->
+  <div id="permission-sheet-overlay">
+    <div id="permission-sheet-panel" role="dialog" aria-modal="true" aria-labelledby="perm-title">
+      <div class="perm-header">
+        <div class="perm-icon" id="perm-icon-wrap">
+          <svg viewBox="0 0 16 16">
+            <path fill="currentColor" d="M8 1a2 2 0 0 1 2 2v4H6V3a2 2 0 0 1 2-2zm3 6V3a3 3 0 0 0-6 0v4a2 2 0 0 0-2 2v5a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/>
+          </svg>
+        </div>
+        <div>
+          <h2 id="perm-title" class="perm-title">Permitir acesso?</h2>
+          <p id="perm-desc" class="perm-desc">Este site está solicitando autorização.</p>
+        </div>
+      </div>
+      <label class="perm-remember-row">
+        <input type="checkbox" id="perm-remember-check" checked />
+        <span>Lembrar desta escolha para este site</span>
+      </label>
+      <div class="perm-actions">
+        <button type="button" id="btn-perm-block" class="btn-perm-block">Bloquear</button>
+        <button type="button" id="btn-perm-allow" class="btn-perm-allow">Permitir</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de Aviso de Download de Risco (Bottom Sheet - ETAPA 4) -->
+  <div id="download-risk-overlay">
+    <div id="download-risk-panel" role="dialog" aria-modal="true" aria-labelledby="download-risk-title">
+      <div class="perm-header">
+        <div class="perm-icon risk-warning-icon">
+          <svg viewBox="0 0 16 16">
+            <path fill="currentColor" d="M8.982 1.566a1.13 1.13 0 0 0-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767L8.982 1.566zM8 5c.535 0 .954.462.9.995l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 5.995A.905.905 0 0 1 8 5zm.002 6a1 1 0 1 1 0 2 1 1 0 0 1 0-2z"/>
+          </svg>
+        </div>
+        <div>
+          <h2 id="download-risk-title" class="perm-title">Arquivo potencialmente perigoso</h2>
+          <p id="download-risk-desc" class="perm-desc">Este arquivo executável pode danificar seu computador ou executar ações indesejadas.</p>
+        </div>
+      </div>
+      <div class="perm-actions">
+        <button type="button" id="btn-download-risk-cancel" class="btn-risk-cancel">Cancelar download</button>
+        <button type="button" id="btn-download-risk-confirm" class="btn-risk-continue">Continuar mesmo assim</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Painel de Confirmação (Estilo Bottom Sheet) -->
+  <div id="fire-sheet-overlay">
+    <div id="fire-sheet-panel" role="dialog" aria-modal="true" aria-labelledby="fire-sheet-title">
+      <div class="fire-sheet-header">
+        <div class="fire-sheet-icon">
+          <svg viewBox="0 0 24 24">
+            <path d="M12 2c-.3 1.8-1.5 3.3-2.6 4.7-1.4 1.8-2.8 3.7-2.9 6.1-.1 3.5 2.7 6.4 6.2 6.5 3.6.1 6.5-2.8 6.5-6.4 0-2.4-1.3-4.6-2.5-6.6-1-1.6-1.9-3.3-2.2-5.2-.1-.4-.6-.6-.9-.3-.5.7-.9 1.5-1.2 2.3-.6 1.4-1.6 2.6-1.5 4.2.1 1.2.9 2.2 2.1 2.3 1.2.1 2.2-.8 2.2-2 0-.6-.2-1.2-.5-1.7-.1-.2.1-.5.3-.4 1.2 1 1.9 2.4 1.9 4 0 2.8-2.2 5-5 5s-5-2.2-5-5c0-1.8.8-3.4 1.9-4.5 1-1 2.1-2.1 2.6-3.4.4-1.1.5-2.3.4-3.5-.1-.4-.5-.6-.8-.4z" />
+          </svg>
+        </div>
+        <div>
+          <h2 id="fire-sheet-title" class="fire-sheet-title">Apagar abas e dados?</h2>
+        </div>
+      </div>
+      <p class="fire-sheet-desc">
+        Todas as abas abertas, cookies de sessão, histórico e arquivos em cache serão permanentemente consumidos pelo fogo do dragão e apagados.
+      </p>
+      <div class="fire-sheet-options">
+        <label class="fire-sheet-checkbox-label">
+          <input type="checkbox" id="chk-fire-bookmarks" />
+          <span>Apagar também os favoritos</span>
+        </label>
+      </div>
+      <div class="fire-sheet-actions">
+        <button id="btn-fire-cancel" class="btn-fire-cancel">Cancelar</button>
+        <button id="btn-fire-confirm" class="btn-fire-confirm">Apagar tudo</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Backdrop e Painel do Escudo de Privacidade (Dropdown na barra de endereço) -->
+  <div id="shield-panel-backdrop"></div>
+  <div id="shield-panel" role="dialog" aria-modal="true" aria-labelledby="shield-site-host">
+    <div class="shield-panel-header">
+      <div class="shield-panel-title-row">
+        <div class="shield-header-icon">
+          <svg viewBox="0 0 16 16">
+            <path fill="currentColor" d="M8 0c-.26 0-.51.1-.7.29L2.24 5.35c-.15.15-.24.36-.24.58v4.57c0 3.2 2.37 5.09 5.76 5.48.16.02.32.02.48 0 3.39-.39 5.76-2.28 5.76-5.48V5.93c0-.22-.09-.43-.24-.58L8.7 0.29C8.51 0.1 8.26 0 8 0zm0 1.5l4.5 4.5v4.5c0 2.4-1.7 3.8-4.5 4.19-2.8-.39-4.5-1.79-4.5-4.19V6l4.5-4.5z"/>
+          </svg>
+        </div>
+        <div class="shield-header-info">
+          <span id="shield-site-host" class="shield-site-host">-</span>
+          <span id="shield-status-text" class="shield-status-text">Proteção ativada neste site</span>
+        </div>
+        <button id="btn-shield-toggle" class="shield-toggle-btn active" role="switch" aria-checked="true" title="Alternar proteção neste site">
+          <span class="toggle-thumb"></span>
+        </button>
+      </div>
+    </div>
+    <div class="shield-panel-body">
+      <div class="shield-section-header">
+        <div id="shield-grade-badge" class="shield-grade-badge grade-a" title="Classificação de privacidade do site">A</div>
+        <div class="shield-metrics-wrap">
+          <span id="shield-trackers-count" class="shield-trackers-count">0 rastreadores bloqueados nesta página</span>
+          <span id="shield-popups-count" class="shield-popups-count">0 pop-ups / redirecionamentos bloqueados</span>
+        </div>
+      </div>
+      <ul id="shield-trackers-list" class="shield-trackers-list">
+        <li class="shield-empty-item">Nenhum rastreador detectado até o momento.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Canvas em Tela Cheia para a Animação do Dragão Azul -->
+  <canvas id="fire-canvas"></canvas>
+
+  <!-- Badge central de pico da animação do Dragão Azul -->
+  <div id="fire-center-badge">
+    <div class="fire-badge-icon-wrap">
+      <img src="../../assets/icons/favicon-circle.png" alt="Dragão Azul" class="fire-badge-img" />
+    </div>
+    <div class="fire-badge-text">Apagando tudo...</div>
+  </div>
+
+  <!-- Toast Flutuante de Confirmação pós-limpeza -->
+  <div id="fire-toast" role="status" aria-live="polite">
+    <div class="fire-toast-icon">
+      <svg viewBox="0 0 24 24">
+        <path d="M12 2c-.3 1.8-1.5 3.3-2.6 4.7-1.4 1.8-2.8 3.7-2.9 6.1-.1 3.5 2.7 6.4 6.2 6.5 3.6.1 6.5-2.8 6.5-6.4 0-2.4-1.3-4.6-2.5-6.6-1-1.6-1.9-3.3-2.2-5.2-.1-.4-.6-.6-.9-.3-.5.7-.9 1.5-1.2 2.3-.6 1.4-1.6 2.6-1.5 4.2.1 1.2.9 2.2 2.1 2.3 1.2.1 2.2-.8 2.2-2 0-.6-.2-1.2-.5-1.7-.1-.2.1-.5.3-.4 1.2 1 1.9 2.4 1.9 4 0 2.8-2.2 5-5 5s-5-2.2-5-5c0-1.8.8-3.4 1.9-4.5 1-1 2.1-2.1 2.6-3.4.4-1.1.5-2.3.4-3.5-.1-.4-.5-.6-.8-.4z" />
+      </svg>
+    </div>
+    <span class="fire-toast-text">Abas e dados apagados</span>
+  </div>
+
+  <!-- Componentes modulares da interface sem necessidade de build -->
+  <script src="components/toolbar.js"></script>
+  <script src="components/addressbar.js"></script>
+  <script src="components/tabs-view.js"></script>
+  <script src="components/privacy-shield.js"></script>
+  <script src="components/fire-button.js"></script>
+  <script src="components/fire-sheet.js"></script>
+  <script src="components/fire-animation.js"></script>
+  <script src="components/find-bar.js"></script>
+  <script src="components/permission-sheet.js"></script>
+  <script src="components/download-risk-sheet.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,1400 @@
+/* ==========================================================================
+   src/renderer/styles/components.css
+   Estilos específicos para os componentes da interface (Abas, Toolbar, Endereço)
+   Todos os valores utilizam as variáveis de theme.css
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   1. BARRA DE ABAS (#tabs-bar)
+   -------------------------------------------------------------------------- */
+#tabs-bar {
+  display: flex;
+  align-items: flex-end;
+  height: var(--tabs-bar-height);
+  padding: 4px 8px 0 8px;
+  background-color: var(--color-bg-window);
+  gap: 4px;
+}
+
+#tabs-container {
+  display: flex;
+  align-items: flex-end;
+  flex: 1;
+  height: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  gap: 2px;
+}
+
+/* Oculta barra de rolagem nativa mantendo a rolagem por mouse */
+#tabs-container::-webkit-scrollbar {
+  display: none;
+}
+
+/* Item individual de aba */
+.tab-item {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  min-width: var(--tab-min-width);
+  max-width: var(--tab-max-width);
+  flex: 1;
+  padding: 0 8px 0 10px;
+  background-color: var(--color-bg-tab-inactive);
+  color: var(--color-text-secondary);
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  cursor: pointer;
+  transition: background-color var(--transition-fast), color var(--transition-fast);
+  position: relative;
+  gap: 6px;
+}
+
+.tab-item:hover {
+  background-color: var(--color-bg-tab-hover);
+  color: var(--color-text-primary);
+}
+
+.tab-item.active {
+  background-color: var(--color-bg-tab-active);
+  color: var(--color-text-primary);
+  font-weight: var(--font-weight-medium);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+/* Favicon da aba */
+.tab-favicon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tab-favicon img {
+  width: 14px;
+  height: 14px;
+  object-fit: contain;
+}
+
+.tab-favicon svg {
+  width: 13px;
+  height: 13px;
+  fill: currentColor;
+  opacity: 0.7;
+}
+
+/* Título da aba com reticências */
+.tab-title {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: var(--font-size-base);
+  line-height: 1.2;
+}
+
+/* Botão de fechar aba */
+.tab-close-btn {
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+  opacity: 0.7;
+  transition: opacity var(--transition-fast), background-color var(--transition-fast), color var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.tab-close-btn:hover {
+  opacity: 1;
+  background-color: var(--color-danger-bg);
+  color: var(--color-danger-hover);
+}
+
+.tab-close-btn svg {
+  width: 10px;
+  height: 10px;
+  fill: currentColor;
+}
+
+/* Botão de nova aba (+) */
+#btn-new-tab {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+  margin-bottom: 2px;
+  transition: background-color var(--transition-fast), color var(--transition-fast);
+}
+
+#btn-new-tab:hover {
+  background-color: var(--color-bg-button-hover);
+  color: var(--color-text-primary);
+}
+
+#btn-new-tab svg {
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+}
+
+/* --------------------------------------------------------------------------
+   2. BARRA DE NAVEGAÇÃO E ENDEREÇO (#nav-bar)
+   -------------------------------------------------------------------------- */
+#nav-bar {
+  display: flex;
+  align-items: center;
+  height: var(--toolbar-height);
+  padding: 0 8px;
+  background-color: var(--color-bg-toolbar);
+  gap: 6px;
+}
+
+/* Controles de navegação (Voltar, Avançar, Recarregar) */
+#nav-controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.nav-btn {
+  width: var(--button-size);
+  height: var(--button-size);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-primary);
+  transition: background-color var(--transition-fast), opacity var(--transition-fast);
+}
+
+.nav-btn:hover:not(:disabled) {
+  background-color: var(--color-bg-button-hover);
+}
+
+.nav-btn svg {
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+}
+
+/* Indicador animado de download ativo na toolbar */
+.nav-btn#btn-downloads.downloading {
+  position: relative;
+  color: var(--color-accent);
+}
+
+.nav-btn#btn-downloads.downloading::after {
+  content: '';
+  position: absolute;
+  bottom: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 14px;
+  height: 2px;
+  background-color: var(--color-accent);
+  border-radius: var(--radius-full, 999px);
+  animation: downloadPulse 1.2s ease-in-out infinite;
+}
+
+@keyframes downloadPulse {
+  0% {
+    opacity: 0.3;
+    transform: translateX(-50%) scaleX(0.4);
+  }
+  50% {
+    opacity: 1;
+    transform: translateX(-50%) scaleX(1);
+  }
+  100% {
+    opacity: 0.3;
+    transform: translateX(-50%) scaleX(0.4);
+  }
+}
+
+/* Formulário e campo de endereço */
+#address-form {
+  display: flex;
+  flex: 1;
+  height: 28px;
+  background-color: var(--color-bg-input);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-pill);
+  padding: 0 12px;
+  align-items: center;
+  transition: border-color var(--transition-fast), background-color var(--transition-fast);
+  gap: 8px;
+}
+
+#address-form:focus-within {
+  border-color: var(--color-border-focus);
+  background-color: var(--color-bg-input-focus);
+}
+
+.address-icon {
+  width: 13px;
+  height: 13px;
+  color: var(--color-text-secondary);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.address-icon svg {
+  width: 12px;
+  height: 12px;
+  fill: currentColor;
+}
+
+#address-input {
+  width: 100%;
+  height: 100%;
+  font-size: var(--font-size-base);
+  color: var(--color-text-primary);
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+#address-input::placeholder {
+  color: var(--color-text-secondary);
+  opacity: 0.6;
+}
+
+/* Spinner de carregamento para a aba */
+.tab-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--color-border-subtle);
+  border-top-color: var(--color-accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* --------------------------------------------------------------------------
+   3. BOTÃO DO FOGO DO DRAGÃO AZUL (#btn-fire)
+   -------------------------------------------------------------------------- */
+.fire-btn {
+  width: var(--button-size);
+  height: var(--button-size);
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  transition: transform var(--transition-fast), filter var(--transition-fast);
+  color: var(--fire-main);
+}
+
+.fire-btn svg {
+  width: 18px;
+  height: 18px;
+  filter: drop-shadow(0 0 2px var(--fire-glow));
+  transition: filter var(--transition-fast), transform var(--transition-fast);
+}
+
+/* Pulso suave de brilho azul ao passar o mouse */
+.fire-btn:hover:not(:disabled) {
+  background-color: var(--color-bg-button-hover);
+  animation: fire-btn-pulse 1.6s ease-in-out infinite;
+}
+
+.fire-btn:hover:not(:disabled) svg {
+  filter: drop-shadow(0 0 6px var(--fire-glow-strong));
+  transform: scale(1.08);
+}
+
+.fire-btn:active:not(:disabled) {
+  transform: scale(0.94);
+}
+
+.fire-btn.fire-busy {
+  opacity: 0.6;
+  cursor: wait;
+  animation: fire-btn-pulse 0.8s ease-in-out infinite;
+}
+
+@keyframes fire-btn-pulse {
+  0% {
+    box-shadow: 0 0 0 0 var(--fire-glow);
+  }
+  50% {
+    box-shadow: 0 0 12px 2px var(--fire-glow-strong);
+  }
+  100% {
+    box-shadow: 0 0 0 0 var(--fire-glow);
+  }
+}
+
+/* --------------------------------------------------------------------------
+   4. BLOQUEIO GLOBAL DE INTERFACE DURANTE A LIMPEZA
+   -------------------------------------------------------------------------- */
+body.ui-locked {
+  cursor: wait !important;
+}
+
+body.ui-locked * {
+  pointer-events: none !important;
+}
+
+/* --------------------------------------------------------------------------
+   5. CONFIRMAÇÃO ESTILO BOTTOM SHEET (#fire-sheet-overlay & #fire-sheet-panel)
+   -------------------------------------------------------------------------- */
+#fire-sheet-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(8, 19, 43, 0.75);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 5000;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.25s ease, visibility 0.25s ease;
+}
+
+#fire-sheet-overlay.visible {
+  opacity: 1;
+  visibility: visible;
+}
+
+#fire-sheet-panel {
+  width: 100%;
+  max-width: 520px;
+  background-color: var(--color-bg-toolbar);
+  border-top: 1px solid var(--fire-edge);
+  border-left: 1px solid var(--fire-edge);
+  border-right: 1px solid var(--fire-edge);
+  border-radius: 16px 16px 0 0;
+  padding: 24px 28px 20px 28px;
+  box-shadow: 0 -10px 35px var(--fire-glow);
+  transform: translateY(100%);
+  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+#fire-sheet-panel.visible {
+  transform: translateY(0);
+}
+
+.fire-sheet-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.fire-sheet-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
+  background-color: rgba(1, 148, 255, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 1px solid var(--fire-edge);
+}
+
+.fire-sheet-icon svg {
+  width: 20px;
+  height: 20px;
+  fill: var(--fire-mid);
+}
+
+.fire-sheet-title {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+  color: var(--fire-core);
+}
+
+.fire-sheet-desc {
+  font-size: var(--font-size-base);
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+}
+
+.fire-sheet-options {
+  margin: 12px 0 6px 0;
+}
+
+.fire-sheet-checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--font-size-base);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.fire-sheet-checkbox-label input[type="checkbox"] {
+  accent-color: var(--color-accent);
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.fire-sheet-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.btn-fire-cancel {
+  padding: 8px 16px;
+  border-radius: var(--radius-md);
+  background-color: var(--color-bg-tab-inactive);
+  color: var(--color-text-primary);
+  font-weight: var(--font-weight-medium);
+  transition: background-color var(--transition-fast);
+}
+
+.btn-fire-cancel:hover {
+  background-color: var(--color-bg-button-hover);
+}
+
+.btn-fire-confirm {
+  padding: 8px 18px;
+  border-radius: var(--radius-md);
+  background-color: var(--fire-main);
+  color: var(--fire-core);
+  font-weight: var(--font-weight-bold);
+  box-shadow: 0 0 12px var(--fire-glow);
+  transition: background-color var(--transition-fast), box-shadow var(--transition-fast), transform var(--transition-fast);
+}
+
+.btn-fire-confirm:hover {
+  background-color: var(--fire-mid);
+  box-shadow: 0 0 18px var(--fire-glow-strong);
+  transform: translateY(-1px);
+}
+
+.btn-fire-confirm:active {
+  transform: translateY(0);
+}
+
+/* --------------------------------------------------------------------------
+   6. CANVAS DA ANIMAÇÃO DO FOGO EM TELA CHEIA (#fire-canvas)
+   -------------------------------------------------------------------------- */
+#fire-canvas {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 9999;
+  pointer-events: none;
+  display: none;
+}
+
+/* --------------------------------------------------------------------------
+   7. TOAST DE CONFIRMAÇÃO FLUTUANTE (#fire-toast)
+   -------------------------------------------------------------------------- */
+#fire-toast {
+  position: fixed;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-10px);
+  background-color: var(--fire-bg);
+  color: var(--fire-core);
+  border: 1px solid var(--fire-edge);
+  border-radius: var(--radius-pill);
+  padding: 8px 18px;
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-medium);
+  box-shadow: 0 8px 24px rgba(8, 19, 43, 0.8), 0 0 14px var(--fire-glow);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  z-index: 10000;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease, transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#fire-toast.visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+.fire-toast-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.fire-toast-icon svg {
+  width: 16px;
+  height: 16px;
+  fill: var(--fire-mid);
+}
+
+#fire-toast.warning {
+  border-color: rgba(255, 179, 0, 0.4);
+  background-color: rgba(40, 28, 10, 0.95);
+  color: #ffe082;
+}
+
+#fire-toast.warning .fire-toast-icon svg {
+  fill: #ffb300;
+}
+
+/* --------------------------------------------------------------------------
+   8. ESCUDO DE PRIVACIDADE NA BARRA DE ENDEREÇO
+   -------------------------------------------------------------------------- */
+.privacy-shield-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: transparent;
+  color: var(--shield-color);
+  padding: 2px 6px;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background-color var(--transition-fast), color var(--transition-fast), transform var(--transition-fast);
+}
+
+.privacy-shield-btn:hover {
+  background-color: var(--color-bg-button-hover);
+  color: var(--shield-hover);
+}
+
+.privacy-shield-btn.protection-off {
+  color: var(--shield-off-color);
+  opacity: 0.8;
+}
+
+.shield-icon-svg {
+  width: 13px;
+  height: 13px;
+  fill: currentColor;
+}
+
+.shield-badge {
+  font-size: 10px;
+  font-weight: var(--font-weight-bold);
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-pill);
+  background-color: transparent;
+  color: var(--color-text-secondary);
+  line-height: 1;
+  transition: background-color var(--transition-fast), color var(--transition-fast);
+}
+
+.shield-badge.has-blocked {
+  background-color: var(--shield-badge-bg);
+  color: var(--shield-badge-text);
+  box-shadow: 0 0 6px var(--fire-glow);
+}
+
+/* Backdrop escuro para fechar ao clicar fora */
+#shield-panel-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 4500;
+  display: none;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+#shield-panel-backdrop.visible {
+  display: block;
+}
+
+/* Painel de sobreposição do escudo (dropdown na barra de endereço) */
+#shield-panel {
+  position: fixed;
+  top: calc(var(--topbar-height) + 6px);
+  left: 120px;
+  width: 360px;
+  max-width: 90vw;
+  background-color: var(--shield-bg);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.5), 0 0 16px var(--fire-glow);
+  z-index: 4600;
+  display: none;
+  flex-direction: column;
+  overflow: hidden;
+  animation: shield-panel-appear 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#shield-panel.visible {
+  display: flex;
+}
+
+@keyframes shield-panel-appear {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.shield-panel-header {
+  padding: 14px 16px;
+  background-color: rgba(8, 19, 43, 0.6);
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.shield-panel-title-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.shield-header-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  background-color: rgba(1, 148, 255, 0.15);
+  color: var(--shield-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.shield-header-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.shield-header-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.shield-site-host {
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shield-status-text {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+/* Toggle Switch estilo iOS / DuckDuckGo */
+.shield-toggle-btn {
+  width: 42px;
+  height: 24px;
+  border-radius: var(--radius-pill);
+  background-color: var(--shield-off-border);
+  position: relative;
+  cursor: pointer;
+  border: none;
+  outline: none;
+  transition: background-color var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.shield-toggle-btn .toggle-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background-color: #ffffff;
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  transition: transform var(--transition-fast);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.shield-toggle-btn.active {
+  background-color: var(--shield-color);
+}
+
+.shield-toggle-btn.active .toggle-thumb {
+  transform: translateX(18px);
+}
+
+.shield-panel-body {
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.shield-section-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.shield-grade-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+  font-size: 20px;
+  font-weight: 800;
+  flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  transition: all 0.2s ease;
+}
+
+.shield-grade-badge.grade-a,
+.shield-grade-badge.grade-b {
+  background: rgba(34, 197, 94, 0.16);
+  color: #22c55e;
+  border: 1.5px solid rgba(34, 197, 94, 0.45);
+}
+
+.shield-grade-badge.grade-c {
+  background: rgba(234, 179, 8, 0.16);
+  color: #eab308;
+  border: 1.5px solid rgba(234, 179, 8, 0.45);
+}
+
+.shield-grade-badge.grade-d,
+.shield-grade-badge.grade-f {
+  background: rgba(239, 68, 68, 0.16);
+  color: #ef4444;
+  border: 1.5px solid rgba(239, 68, 68, 0.45);
+}
+
+.shield-metrics-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.shield-trackers-count {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.shield-popups-count {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}
+
+.shield-trackers-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.shield-tracker-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+  background-color: rgba(255, 255, 255, 0.04);
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+}
+
+.tracker-bullet {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--shield-color);
+  flex-shrink: 0;
+}
+
+.shield-empty-item {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+  font-style: italic;
+  padding: 8px 0;
+}
+
+/* --------------------------------------------------------------------------
+   9. ESTILOS DE ABA PRIVADA
+   -------------------------------------------------------------------------- */
+.tab-item.private {
+  background-color: var(--private-tab-bg);
+  border-bottom: 2px solid var(--private-icon-color);
+}
+
+.tab-item.private.active {
+  background-color: var(--private-tab-active-bg);
+  color: #ffffff;
+}
+
+.private-icon-svg {
+  width: 14px;
+  height: 14px;
+  color: var(--private-icon-color);
+}
+
+/* --------------------------------------------------------------------------
+   10. BADGE CENTRAL DA ANIMAÇÃO DO FOGO (#fire-center-badge)
+   -------------------------------------------------------------------------- */
+#fire-center-badge {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(0.9);
+  z-index: 10001;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.3s ease, transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.3s ease;
+}
+
+#fire-center-badge.visible {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, -50%) scale(1);
+}
+
+.fire-badge-icon-wrap {
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
+  background-color: var(--fire-bg);
+  border: 2px solid var(--fire-mid);
+  box-shadow: 0 0 35px var(--fire-glow-strong);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fire-badge-pulse 1.8s ease-in-out infinite;
+}
+
+.fire-badge-img {
+  width: 60px;
+  height: 60px;
+  object-fit: contain;
+}
+
+.fire-badge-text {
+  font-size: 16px;
+  font-weight: var(--font-weight-bold);
+  color: var(--fire-core);
+  text-shadow: 0 0 12px var(--fire-glow-strong);
+  letter-spacing: 0.5px;
+}
+
+@keyframes fire-badge-pulse {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 25px var(--fire-glow);
+  }
+  50% {
+    transform: scale(1.06);
+    box-shadow: 0 0 45px var(--fire-glow-strong);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 25px var(--fire-glow);
+  }
+}
+
+/* --------------------------------------------------------------------------
+   8. MODO DE TELA CHEIA HTML5 (VÍDEO)
+   -------------------------------------------------------------------------- */
+body.html-fullscreen #app {
+  display: none !important;
+}
+
+/* --------------------------------------------------------------------------
+   9. REORDENAÇÃO DE ABAS (DRAG & DROP)
+   -------------------------------------------------------------------------- */
+.tab-item.dragging {
+  opacity: 0.45;
+}
+
+.tab-item.drag-over {
+  border-left: 2px solid var(--color-accent);
+}
+
+/* --------------------------------------------------------------------------
+   10. BOTÕES DA BARRA (FAVORITO & DOWNLOADS)
+   -------------------------------------------------------------------------- */
+.bookmark-btn {
+  background: transparent;
+  border: none;
+  color: var(--color-text-secondary);
+  width: var(--button-size);
+  height: var(--button-size);
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: color var(--transition-fast), background-color var(--transition-fast);
+}
+
+.bookmark-btn:hover {
+  background-color: var(--color-bg-button-hover);
+  color: var(--color-text-primary);
+}
+
+.bookmark-btn.active svg {
+  fill: #ffb800;
+  color: #ffb800;
+}
+
+.bookmark-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* --------------------------------------------------------------------------
+   11. SUGESTÕES NA OMNIBOX (DROPDOWN)
+   -------------------------------------------------------------------------- */
+#omnibox-dropdown {
+  position: fixed;
+  background-color: var(--color-bg-toolbar);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  z-index: 9999;
+  display: none;
+  flex-direction: column;
+  overflow: hidden;
+  max-height: 380px;
+}
+
+#omnibox-dropdown.visible {
+  display: flex;
+}
+
+.omnibox-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  cursor: pointer;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  transition: background-color var(--transition-fast);
+}
+
+.omnibox-item:last-child {
+  border-bottom: none;
+}
+
+.omnibox-item:hover,
+.omnibox-item.selected {
+  background-color: var(--color-bg-button-hover);
+}
+
+.omnibox-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  fill: var(--color-text-muted);
+}
+
+.omnibox-item.type-bookmark .omnibox-icon {
+  fill: #ffb800;
+}
+
+.omnibox-item.type-search .omnibox-icon {
+  fill: var(--color-accent);
+}
+
+.omnibox-text-wrap {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.omnibox-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.omnibox-url {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* --------------------------------------------------------------------------
+   12. BARRA DE BUSCA NA PÁGINA (CTRL+F)
+   -------------------------------------------------------------------------- */
+#find-bar {
+  position: fixed;
+  top: var(--topbar-height);
+  right: 24px;
+  height: 44px;
+  background-color: var(--color-bg-toolbar);
+  border: 1px solid var(--color-border-subtle);
+  border-top: none;
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
+  padding: 6px 12px;
+  display: none;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  z-index: 4800;
+}
+
+#find-bar.visible {
+  display: flex;
+}
+
+.find-input {
+  background-color: var(--color-bg-input);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-primary);
+  padding: 4px 8px;
+  font-size: 13px;
+  width: 180px;
+  outline: none;
+}
+
+.find-input:focus {
+  border-color: var(--color-accent);
+}
+
+.find-count {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  min-width: 40px;
+  text-align: center;
+}
+
+.find-btn {
+  background: transparent;
+  border: none;
+  color: var(--color-text-secondary);
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color var(--transition-fast), color var(--transition-fast);
+}
+
+.find-btn:hover {
+  background-color: var(--color-bg-button-hover);
+  color: var(--color-text-primary);
+}
+
+.find-btn svg {
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+}
+
+/* --------------------------------------------------------------------------
+   13. PROMPT DE PERMISSÕES POR SITE (BOTTOM SHEET)
+   -------------------------------------------------------------------------- */
+#permission-sheet-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(8, 19, 43, 0.55);
+  backdrop-filter: blur(4px);
+  z-index: 4700;
+  display: none;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+#permission-sheet-overlay.visible {
+  display: flex;
+}
+
+#permission-sheet-panel {
+  background-color: var(--color-bg-toolbar);
+  border: 1px solid var(--color-border-subtle);
+  border-bottom: none;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  padding: 24px 28px;
+  max-width: 520px;
+  width: 100%;
+  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  animation: slide-up 0.2s ease-out;
+}
+
+@keyframes slide-up {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+.perm-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.perm-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  background: rgba(77, 124, 255, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-accent);
+}
+
+.perm-icon svg {
+  width: 22px;
+  height: 22px;
+  fill: currentColor;
+}
+
+.perm-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.perm-desc {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.perm-remember-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.perm-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.btn-perm-block {
+  background: transparent;
+  border: 1px solid var(--color-border-subtle);
+  color: var(--color-text-primary);
+  padding: 8px 16px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-size: 13px;
+  transition: background-color var(--transition-fast);
+}
+
+.btn-perm-block:hover {
+  background-color: var(--color-bg-button-hover);
+}
+
+.btn-perm-allow {
+  background-color: var(--color-accent);
+  border: none;
+  color: #ffffff;
+  padding: 8px 18px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  transition: background-color var(--transition-fast);
+}
+
+.btn-perm-allow:hover {
+  background-color: var(--color-accent-hover);
+}
+
+/* =============================================================================
+   Barra de Redirecionamento Bloqueado (ETAPA 1)
+   ============================================================================= */
+
+.redirect-blocked-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background-color: var(--color-bg-secondary, #1e1e24);
+  border-bottom: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.08));
+  padding: 6px 16px;
+  font-size: var(--font-size-sm, 13px);
+  color: var(--color-text-primary, #ffffff);
+  animation: slide-down-banner 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 100;
+}
+
+.redirect-bar-content {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.redirect-bar-icon {
+  width: 16px;
+  height: 16px;
+  color: #f59e0b;
+  flex-shrink: 0;
+}
+
+.redirect-bar-text {
+  font-weight: 500;
+}
+
+.redirect-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-allow-redirect {
+  background-color: var(--color-accent, #3b82f6);
+  border: none;
+  color: #ffffff;
+  padding: 4px 12px;
+  border-radius: var(--radius-sm, 4px);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.btn-allow-redirect:hover {
+  opacity: 0.9;
+}
+
+.btn-dismiss-redirect {
+  background: transparent;
+  border: none;
+  color: var(--color-text-secondary, #9ca3af);
+  padding: 4px 8px;
+  border-radius: var(--radius-sm, 4px);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.btn-dismiss-redirect:hover {
+  color: #ffffff;
+}
+
+@keyframes slide-down-banner {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* --------------------------------------------------------------------------
+   14. AVISO DE DOWNLOAD POTENCIALMENTE PERIGOSO (ETAPA 4)
+   -------------------------------------------------------------------------- */
+#download-risk-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(8, 19, 43, 0.65);
+  backdrop-filter: blur(4px);
+  z-index: 4800;
+  display: none;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+#download-risk-overlay.visible {
+  display: flex;
+}
+
+#download-risk-panel {
+  background-color: var(--color-bg-toolbar);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  border-bottom: none;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  padding: 24px 28px;
+  max-width: 540px;
+  width: 100%;
+  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.6);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  animation: slide-up 0.2s ease-out;
+}
+
+.risk-warning-icon {
+  background: rgba(239, 68, 68, 0.15) !important;
+  color: #ef4444 !important;
+}
+
+.risk-highlight {
+  color: #f87171;
+  font-weight: 600;
+}
+
+.btn-risk-cancel {
+  background-color: #ef4444;
+  border: none;
+  color: #ffffff;
+  padding: 8px 20px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+  transition: background-color var(--transition-fast);
+}
+
+.btn-risk-cancel:hover {
+  background-color: #dc2626;
+}
+
+.btn-risk-continue {
+  background: transparent;
+  border: 1px solid var(--color-border-subtle);
+  color: var(--color-text-secondary);
+  padding: 8px 16px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-size: 13px;
+  transition: all var(--transition-fast);
+}
+
+.btn-risk-continue:hover {
+  background-color: var(--color-bg-button-hover);
+  color: var(--color-text-primary);
+}
+
+
+
+
+
+

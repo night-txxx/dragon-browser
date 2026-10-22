@@ -1,0 +1,29 @@
+# Dependências
+node_modules/
+
+# Builds e empacotamento
+dist/
+build/
+*.zip
+
+# Arquivos de dados de usuário locais e temporários
+settings.json
+settings.json.bak
+history.json
+sessions.json
+bookmarks.json
+downloads.json
+permissions.json
+privacy-exemptions.json
+
+# Diretórios de rascunho / testes temporários
+scratch/
+.gemini/
+
+# Logs e arquivos de sistema operacional
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.DS_Store
+Thumbs.db
+desktop.ini

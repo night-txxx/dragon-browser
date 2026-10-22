@@ -1,0 +1,99 @@
+/* ==========================================================================
+   src/renderer/styles/theme.css
+   ARQUIVO ÚNICO DE TEMA E VARIÁVEIS CSS
+   Todas as cores, medidas, fontes e raios de borda ficam definidos aqui.
+   Para alterar o visual de toda a aplicação, modifique apenas este arquivo.
+   ========================================================================== */
+
+:root {
+  /* --- Cores de Fundo (Tema Escuro Simples) --- */
+  --color-bg-window: #1e1e24;       /* Fundo da janela e barra superior */
+  --color-bg-toolbar: #23232b;      /* Fundo da barra de navegação/botões */
+  --color-bg-tab-inactive: #23232b; /* Fundo de abas inativas */
+  --color-bg-tab-hover: #2b2b35;    /* Fundo de abas ao passar o mouse */
+  --color-bg-tab-active: #2f2f3a;   /* Fundo da aba selecionada */
+  --color-bg-input: #18181d;        /* Fundo do campo de endereço */
+  --color-bg-input-focus: #151519;  /* Fundo do campo quando em foco */
+  --color-bg-button-hover: #333340; /* Fundo dos botões ao passar o mouse */
+
+  /* --- Cores de Texto --- */
+  --color-text-primary: #f0f0f5;    /* Texto principal legível */
+  --color-text-secondary: #9e9ea8;  /* Títulos de abas inativas e dicas */
+  --color-text-muted: #666673;      /* Texto de botões desabilitados */
+
+  /* --- Cores de Borda e Linhas --- */
+  --color-border-subtle: #2d2d38;   /* Linhas divisórias sutis */
+  --color-border-focus: #4d7cff;    /* Borda azul ao focar a barra de endereço */
+
+  /* --- Cores de Destaque e Ações --- */
+  --color-accent: #4d7cff;          /* Azul padrão para foco e ações */
+  --color-accent-hover: #3b6ae6;    /* Azul ao passar o mouse */
+  --color-danger-hover: #e04545;    /* Vermelho no botão de fechar aba */
+  --color-danger-bg: rgba(224, 69, 69, 0.15);
+
+  /* --- Tipografia --- */
+  --font-family-base: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-size-sm: 12px;
+  --font-size-base: 13px;
+  --font-size-lg: 14px;
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-bold: 600;
+
+  /* --- Medidas e Dimensões de Layout --- */
+  --topbar-height: 76px;            /* Altura total da interface do navegador */
+  --tabs-bar-height: 38px;          /* Linha de abas */
+  --toolbar-height: 38px;           /* Linha da barra de navegação e endereço */
+  --tab-max-width: 220px;           /* Largura máxima de cada aba */
+  --tab-min-width: 90px;            /* Largura mínima de cada aba */
+  --button-size: 28px;              /* Diâmetro/largura padrão de botões da barra */
+
+  /* --- Raios de Borda (Border Radius) --- */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-pill: 9999px;
+
+  /* --- Transições --- */
+  --transition-fast: 0.15s ease;
+
+  /* --- Paleta do Fogo do Dragão Azul (Apagar Tudo) --- */
+  --fire-core: #E6F7FF;       /* Centro quase branco */
+  --fire-mid: #29B6FF;        /* Azul ciano */
+  --fire-main: #0194FF;       /* Azul elétrico */
+  --fire-edge: #0A2A9E;       /* Azul profundo */
+  --fire-bg: #08132B;         /* Azul-marinho de fundo */
+  --fire-glow: rgba(1, 148, 255, 0.4);
+  --fire-glow-strong: rgba(41, 182, 255, 0.85);
+
+  /* --- Proteção de Privacidade e Escudo (DuckDuckGo style) --- */
+  --shield-color: var(--fire-main);
+  --shield-hover: var(--fire-mid);
+  --shield-bg: #1c2738;
+  --shield-off-color: var(--color-text-muted);
+  --shield-off-border: #444452;
+  --shield-badge-bg: var(--fire-main);
+  --shield-badge-text: #ffffff;
+  --private-tab-bg: #211c2e;
+  --private-tab-active-bg: #2d2442;
+  --private-icon-color: #b088ff;
+}
+
+/* --- Suporte ao Tema Claro --- */
+body.theme-light {
+  --color-bg-window: #e8e9f0;
+  --color-bg-toolbar: #f4f5fa;
+  --color-bg-tab-inactive: #e0e2ec;
+  --color-bg-tab-hover: #d5d8e4;
+  --color-bg-tab-active: #ffffff;
+  --color-bg-input: #ffffff;
+  --color-bg-input-focus: #ffffff;
+  --color-bg-button-hover: #dcdfe8;
+  --color-text-primary: #1e1e24;
+  --color-text-secondary: #5a5a68;
+  --color-text-muted: #8c8c9a;
+  --color-border-subtle: #d0d2de;
+  --private-tab-bg: #ece6f6;
+  --private-tab-active-bg: #ffffff;
+}
+

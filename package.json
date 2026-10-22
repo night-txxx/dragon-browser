@@ -1,0 +1,53 @@
+{
+  "name": "dragon",
+  "productName": "Dragon",
+  "version": "1.0.0",
+  "description": "Navegador desktop Dragon para Windows com foco em privacidade e desempenho construído com Electron puro",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test",
+    "dist": "electron-builder"
+  },
+  "keywords": [
+    "browser",
+    "electron",
+    "desktop-app",
+    "vanilla-js"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^44.9.0",
+    "electron-builder": "^25.1.8"
+  },
+  "dependencies": {
+    "tldts": "^7.4.18"
+  },
+  "build": {
+    "appId": "com.dragon.browser",
+    "productName": "Dragon",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "pages/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "assets/icons/favicon-circle.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Dragon"
+    }
+  }
+}

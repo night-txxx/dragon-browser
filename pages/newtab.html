@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;">
+  <title>Dragon - Nova Aba</title>
+  <style>
+    :root {
+      --color-accent: #4d7cff;
+      --color-accent-hover: #3b6ae6;
+      --fire-mid: #29B6FF;
+      --fire-main: #0194FF;
+      --color-bg-base: #18181d;
+      --color-text-main: #f0f0f5;
+      --color-text-sub: #9e9ea8;
+      --color-card-bg: #1f1f26;
+      --color-card-border: #2d2d38;
+      --color-input-bg: #22222a;
+      --color-input-border: #333340;
+      --color-kbd-bg: #2c2c36;
+      --color-kbd-border: #3d3d4b;
+      --color-kbd-text: #e0e0ea;
+      --bg-dim-opacity: 0.4;
+      --bg-blur-amount: 4px;
+    }
+
+    /* Tema Claro */
+    body.theme-light {
+      --color-bg-base: #f0f2f7;
+      --color-text-main: #18181f;
+      --color-text-sub: #585868;
+      --color-card-bg: #ffffff;
+      --color-card-border: #dcdfe8;
+      --color-input-bg: #ffffff;
+      --color-input-border: #d0d4e0;
+      --color-kbd-bg: #ebedf5;
+      --color-kbd-border: #d0d4e0;
+      --color-kbd-text: #2c2c36;
+    }
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--color-bg-base);
+      color: var(--color-text-main);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      user-select: none;
+      position: relative;
+      overflow-x: hidden;
+      transition: background-color 0.2s ease, color 0.2s ease;
+    }
+
+    /* Camada de Imagem de Fundo Personalizada */
+    #bg-image-layer {
+      position: fixed;
+      inset: -20px;
+      z-index: -2;
+      background-size: cover;
+      background-position: center;
+      background-repeat: no-repeat;
+      display: none;
+      filter: blur(var(--bg-blur-amount));
+      transform: scale(1.05);
+      transition: filter 0.2s ease, opacity 0.3s ease;
+    }
+
+    /* Camada de Escurecimento do Fundo */
+    #bg-dim-layer {
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      background-color: rgba(0, 0, 0, var(--bg-dim-opacity));
+      display: none;
+      pointer-events: none;
+      transition: background-color 0.2s ease;
+    }
+
+    .container {
+      max-width: 680px;
+      width: 100%;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 28px;
+      z-index: 1;
+    }
+
+    .logo-area {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .logo-icon {
+      width: 58px;
+      height: 58px;
+      background: transparent;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      filter: drop-shadow(0 0 8px var(--fire-mid)) drop-shadow(0 0 16px var(--fire-main));
+      animation: logo-glow-pulse 2.8s ease-in-out infinite;
+      transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), filter 0.25s ease;
+      cursor: default;
+    }
+
+    .logo-icon:hover {
+      transform: scale(1.08);
+      filter: drop-shadow(0 0 12px var(--fire-mid)) drop-shadow(0 0 24px var(--color-accent));
+      animation-play-state: paused;
+    }
+
+    .logo-icon img {
+      width: 48px;
+      height: 48px;
+      object-fit: contain;
+      display: block;
+      user-select: none;
+      -webkit-user-drag: none;
+    }
+
+    .logo-icon svg {
+      width: 34px;
+      height: 34px;
+      fill: #ffffff;
+    }
+
+    @keyframes logo-glow-pulse {
+      0%, 100% {
+        filter: drop-shadow(0 0 7px var(--fire-mid)) drop-shadow(0 0 14px var(--fire-main));
+      }
+      50% {
+        filter: drop-shadow(0 0 12px var(--fire-mid)) drop-shadow(0 0 22px var(--color-accent));
+      }
+    }
+
+    h1 {
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      text-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+    }
+
+    p.subtitle {
+      color: var(--color-text-sub);
+      font-size: 14px;
+      text-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+    }
+
+    .search-box {
+      width: 100%;
+      background-color: var(--color-input-bg);
+      border: 1px solid var(--color-input-border);
+      border-radius: 28px;
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+      transition: border-color 0.2s, background-color 0.2s, box-shadow 0.2s;
+    }
+
+    .search-box:focus-within {
+      border-color: var(--color-accent);
+      box-shadow: 0 0 0 3px rgba(77, 124, 255, 0.2), 0 6px 24px rgba(0, 0, 0, 0.3);
+    }
+
+    .search-box svg {
+      width: 18px;
+      height: 18px;
+      fill: var(--color-text-sub);
+      flex-shrink: 0;
+    }
+
+    .search-input {
+      width: 100%;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: var(--color-text-main);
+      font-size: 15px;
+      user-select: text;
+    }
+
+    .search-input::placeholder {
+      color: var(--color-text-sub);
+      opacity: 0.8;
+    }
+
+    .shortcuts-card {
+      width: 100%;
+      background-color: var(--color-card-bg);
+      border: 1px solid var(--color-card-border);
+      border-radius: 14px;
+      padding: 18px 22px;
+      text-align: left;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+      backdrop-filter: blur(8px);
+      transition: background-color 0.2s ease, border-color 0.2s ease;
+    }
+
+    .shortcuts-card h2 {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--color-text-sub);
+      margin-bottom: 14px;
+      font-weight: 600;
+    }
+
+    .shortcuts-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 10px 16px;
+    }
+
+    .shortcut-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 13px;
+      color: var(--color-text-main);
+    }
+
+    kbd {
+      background-color: var(--color-kbd-bg);
+      border: 1px solid var(--color-kbd-border);
+      border-radius: 4px;
+      padding: 2px 7px;
+      font-family: inherit;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--color-kbd-text);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+    }
+  </style>
+</head>
+<body>
+  <!-- Camadas para imagem de fundo personalizada da nova aba -->
+  <div id="bg-image-layer"></div>
+  <div id="bg-dim-layer"></div>
+
+  <div class="container">
+    <div class="logo-area">
+      <div class="logo-icon">
+        <img src="../assets/icons/favicon-circle.png" alt="Dragon">
+      </div>
+      <h1>Dragon</h1>
+      <p id="subtitle-text" class="subtitle">Navegação rápida, privada e segura</p>
+    </div>
+
+    <!-- Barra de busca rápida na página inicial -->
+    <form class="search-box" id="search-form">
+      <svg viewBox="0 0 16 16">
+        <path d="M11.5 7a4.499 4.499 0 1 1-8.998 0A4.499 4.499 0 0 1 11.5 7zm-.82 4.74a6 6 0 1 0-1.06 1.06l3.65 3.65a.75.75 0 1 0 1.06-1.06l-3.65-3.65z"/>
+      </svg>
+      <input
+        class="search-input"
+        id="search-input"
+        type="text"
+        placeholder="Pesquisar ou digitar endereço da web..."
+        autofocus
+        autocomplete="off"
+        spellcheck="false"
+      />
+    </form>
+
+    <!-- Cartão com atalhos de teclado rápidos -->
+    <div id="shortcuts-card" class="shortcuts-card">
+      <h2>Atalhos Rápidos</h2>
+      <div class="shortcuts-grid">
+        <div class="shortcut-item"><span>Nova aba</span><kbd>Ctrl + T</kbd></div>
+        <div class="shortcut-item"><span>Fechar aba ativa</span><kbd>Ctrl + W</kbd></div>
+        <div class="shortcut-item"><span>Reabrir aba fechada</span><kbd>Ctrl + Shift + T</kbd></div>
+        <div class="shortcut-item"><span>Focar endereço</span><kbd>Ctrl + L</kbd></div>
+        <div class="shortcut-item"><span>Buscar na página</span><kbd>Ctrl + F</kbd></div>
+        <div class="shortcut-item"><span>Favoritar página</span><kbd>Ctrl + D</kbd></div>
+        <div class="shortcut-item"><span>Histórico</span><kbd>Ctrl + H</kbd></div>
+        <div class="shortcut-item"><span>Downloads</span><kbd>Ctrl + J</kbd></div>
+        <div class="shortcut-item"><span>Configurações</span><kbd>Ctrl + ,</kbd></div>
+        <div class="shortcut-item"><span>Recarregar página</span><kbd>Ctrl + R / F5</kbd></div>
+        <div class="shortcut-item"><span>Próxima aba</span><kbd>Ctrl + Tab</kbd></div>
+        <div class="shortcut-item"><span>Aba anterior</span><kbd>Ctrl + Shift + Tab</kbd></div>
+        <div class="shortcut-item"><span>Abas 1 a 9</span><kbd>Ctrl + 1..9</kbd></div>
+        <div class="shortcut-item"><span>Zoom</span><kbd>Ctrl + / - / 0</kbd></div>
+        <div class="shortcut-item"><span>Apagar tudo</span><kbd>Ctrl + Shift + Del</kbd></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="newtab.js"></script>
+</body>
+</html>

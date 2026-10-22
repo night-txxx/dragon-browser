@@ -1,0 +1,1383 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;">
+  <title>Configurações - Dragon</title>
+  <!-- Carrega variáveis e tokens visuais do tema do Dragon -->
+  <link rel="stylesheet" href="../src/renderer/styles/theme.css">
+  <style>
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--color-bg-window, #1e1e24);
+      color: var(--color-text-primary, #f0f0f5);
+      font-family: var(--font-family-base, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif);
+      font-size: var(--font-size-base, 13px);
+      line-height: 1.5;
+      height: 100vh;
+      display: flex;
+      overflow: hidden;
+      user-select: none;
+    }
+
+    /* -------------------------------------------------------------------------
+       BARRA LATERAL ESQUERDA (MENU DE SEÇÕES)
+       ------------------------------------------------------------------------- */
+    .sidebar {
+      width: 250px;
+      min-width: 250px;
+      background-color: var(--color-bg-toolbar, #23232b);
+      border-right: 1px solid var(--color-border-subtle, #2d2d38);
+      display: flex;
+      flex-direction: column;
+      padding: 24px 16px;
+      gap: 20px;
+    }
+
+    .sidebar-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 8px 12px 8px;
+      border-bottom: 1px solid var(--color-border-subtle, #2d2d38);
+    }
+
+    .sidebar-logo {
+      width: 32px;
+      height: 32px;
+      background: transparent;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      filter: drop-shadow(0 0 5px var(--fire-mid, #29B6FF)) drop-shadow(0 0 10px var(--fire-main, #0194FF));
+      animation: sidebar-glow-pulse 3s ease-in-out infinite;
+      transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), filter 0.25s ease;
+      cursor: default;
+    }
+
+    .sidebar-header:hover .sidebar-logo {
+      transform: scale(1.1);
+      filter: drop-shadow(0 0 7px var(--fire-mid, #29B6FF)) drop-shadow(0 0 14px var(--color-accent, #4d7cff));
+      animation-play-state: paused;
+    }
+
+    .sidebar-logo img {
+      width: 26px;
+      height: 26px;
+      object-fit: contain;
+      display: block;
+      user-select: none;
+      -webkit-user-drag: none;
+    }
+
+    .sidebar-logo svg {
+      width: 18px;
+      height: 18px;
+      fill: #ffffff;
+    }
+
+    @keyframes sidebar-glow-pulse {
+      0%, 100% {
+        filter: drop-shadow(0 0 4px var(--fire-mid, #29B6FF)) drop-shadow(0 0 9px var(--fire-main, #0194FF));
+      }
+      50% {
+        filter: drop-shadow(0 0 7px var(--fire-mid, #29B6FF)) drop-shadow(0 0 14px var(--color-accent, #4d7cff));
+      }
+    }
+
+    .sidebar-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--color-text-primary, #f0f0f5);
+      letter-spacing: -0.2px;
+    }
+
+    .sidebar-nav {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      flex: 1;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 14px;
+      border-radius: var(--radius-md, 6px);
+      background: transparent;
+      border: none;
+      color: var(--color-text-secondary, #9e9ea8);
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      text-align: left;
+      transition: background-color var(--transition-fast, 0.15s), color var(--transition-fast, 0.15s);
+      outline: none;
+    }
+
+    .nav-item svg {
+      width: 18px;
+      height: 18px;
+      fill: currentColor;
+      flex-shrink: 0;
+    }
+
+    .nav-item:hover {
+      background-color: var(--color-bg-button-hover, #333340);
+      color: var(--color-text-primary, #f0f0f5);
+    }
+
+    .nav-item.active {
+      background-color: var(--color-bg-tab-active, #2f2f3a);
+      color: #ffffff;
+      font-weight: 600;
+      box-shadow: inset 3px 0 0 var(--color-accent, #4d7cff);
+    }
+
+    .sidebar-footer {
+      font-size: 11px;
+      color: var(--color-text-muted, #666673);
+      padding: 0 8px;
+      text-align: center;
+    }
+
+    /* -------------------------------------------------------------------------
+       ÁREA PRINCIPAL DE CONTEÚDO (PAINÉIS À DIREITA)
+       ------------------------------------------------------------------------- */
+    .content-area {
+      flex: 1;
+      height: 100vh;
+      overflow-y: auto;
+      padding: 36px 48px;
+      background-color: var(--color-bg-window, #1e1e24);
+    }
+
+    .panel {
+      display: none;
+      max-width: 760px;
+      margin: 0 auto;
+      animation: fadeIn 0.15s ease;
+    }
+
+    .panel.active {
+      display: block;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .panel-header {
+      margin-bottom: 28px;
+      padding-bottom: 14px;
+      border-bottom: 1px solid var(--color-border-subtle, #2d2d38);
+    }
+
+    .panel-header h1 {
+      font-size: 24px;
+      font-weight: 700;
+      color: var(--color-text-primary, #f0f0f5);
+      margin-bottom: 6px;
+    }
+
+    .panel-header p {
+      font-size: 14px;
+      color: var(--color-text-secondary, #9e9ea8);
+    }
+
+    /* -------------------------------------------------------------------------
+       CARTÕES DE CONFIGURAÇÃO (CARDS)
+       ------------------------------------------------------------------------- */
+    .settings-card {
+      background-color: var(--color-bg-toolbar, #23232b);
+      border: 1px solid var(--color-border-subtle, #2d2d38);
+      border-radius: var(--radius-lg, 8px);
+      padding: 20px 24px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    }
+
+    .card-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--color-text-primary, #f0f0f5);
+      margin-bottom: 4px;
+    }
+
+    .card-desc {
+      font-size: 13px;
+      color: var(--color-text-secondary, #9e9ea8);
+      margin-bottom: 16px;
+    }
+
+    /* Formulários e Controles */
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    label {
+      font-size: 13px;
+      color: var(--color-text-primary, #f0f0f5);
+      font-weight: 500;
+    }
+
+    select, input[type="text"], input[type="url"], input[type="password"] {
+      width: 100%;
+      background-color: var(--color-bg-input, #18181d);
+      border: 1px solid var(--color-border-subtle, #2d2d38);
+      border-radius: var(--radius-md, 6px);
+      color: var(--color-text-primary, #f0f0f5);
+      padding: 10px 14px;
+      font-size: 13px;
+      font-family: inherit;
+      outline: none;
+      transition: border-color var(--transition-fast, 0.15s), box-shadow var(--transition-fast, 0.15s);
+      user-select: text;
+    }
+
+    select:focus, input[type="text"]:focus, input[type="url"]:focus, input[type="password"]:focus {
+      border-color: var(--color-accent, #4d7cff);
+      box-shadow: 0 0 0 2px rgba(77, 124, 255, 0.25);
+    }
+
+    .help-text {
+      font-size: 12px;
+      color: var(--color-text-muted, #666673);
+    }
+
+    .help-text code {
+      background-color: var(--color-bg-input, #18181d);
+      padding: 2px 5px;
+      border-radius: 4px;
+      border: 1px solid var(--color-border-subtle, #2d2d38);
+      font-family: monospace;
+      color: var(--color-accent, #4d7cff);
+    }
+
+    /* Opções em Radio */
+    .radio-group {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .radio-option {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      cursor: pointer;
+      padding: 8px 12px;
+      border-radius: var(--radius-md, 6px);
+      background-color: rgba(255, 255, 255, 0.02);
+      border: 1px solid transparent;
+      transition: background-color var(--transition-fast, 0.15s), border-color var(--transition-fast, 0.15s);
+    }
+
+    .radio-option:hover {
+      background-color: rgba(255, 255, 255, 0.04);
+      border-color: var(--color-border-subtle, #2d2d38);
+    }
+
+    .radio-option input[type="radio"] {
+      appearance: none;
+      width: 16px;
+      height: 16px;
+      border: 2px solid var(--color-text-muted, #666673);
+      border-radius: 50%;
+      outline: none;
+      cursor: pointer;
+      position: relative;
+      margin: 0;
+      flex-shrink: 0;
+      transition: border-color var(--transition-fast, 0.15s);
+    }
+
+    .radio-option input[type="radio"]:checked {
+      border-color: var(--color-accent, #4d7cff);
+    }
+
+    .radio-option input[type="radio"]:checked::after {
+      content: '';
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 6px;
+      height: 6px;
+      background-color: var(--color-accent, #4d7cff);
+      border-radius: 50%;
+    }
+
+    .radio-label {
+      font-size: 13px;
+      color: var(--color-text-primary, #f0f0f5);
+    }
+
+    /* Botões */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 9px 18px;
+      border-radius: var(--radius-md, 6px);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: all var(--transition-fast, 0.15s);
+      outline: none;
+      font-family: inherit;
+    }
+
+    .btn-primary {
+      background-color: var(--color-accent, #4d7cff);
+      color: #ffffff;
+    }
+
+    .btn-primary:hover {
+      background-color: var(--color-accent-hover, #3b6ae6);
+    }
+
+    .btn-secondary {
+      background-color: var(--color-bg-input, #18181d);
+      border-color: var(--color-border-subtle, #2d2d38);
+      color: var(--color-text-primary, #f0f0f5);
+    }
+
+    .btn-secondary:hover {
+      background-color: var(--color-bg-button-hover, #333340);
+      border-color: var(--color-text-secondary, #9e9ea8);
+    }
+
+    .btn-danger {
+      background-color: rgba(224, 69, 69, 0.15);
+      border-color: rgba(224, 69, 69, 0.3);
+      color: #ff6b6b;
+    }
+
+    .btn-danger:hover {
+      background-color: rgba(224, 69, 69, 0.25);
+    }
+
+    /* Seletor de Cores de Destaque */
+    .color-picker-grid {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 8px;
+    }
+
+    .color-swatch {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      border: 2px solid transparent;
+      cursor: pointer;
+      outline: none;
+      transition: transform var(--transition-fast, 0.15s), border-color var(--transition-fast, 0.15s);
+      position: relative;
+    }
+
+    .color-swatch:hover {
+      transform: scale(1.15);
+    }
+
+    .color-swatch.active {
+      border-color: #ffffff;
+      box-shadow: 0 0 0 2px var(--color-bg-window, #1e1e24);
+    }
+
+    .custom-color-wrap {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background-color: var(--color-bg-input, #18181d);
+      border: 1px solid var(--color-border-subtle, #2d2d38);
+      border-radius: var(--radius-md, 6px);
+      padding: 4px 10px 4px 6px;
+      margin-left: 8px;
+    }
+
+    input[type="color"] {
+      appearance: none;
+      width: 26px;
+      height: 26px;
+      border: none;
+      background: transparent;
+      cursor: pointer;
+      padding: 0;
+      border-radius: 50%;
+      outline: none;
+    }
+
+    input[type="color"]::-webkit-color-swatch-wrapper {
+      padding: 0;
+    }
+
+    input[type="color"]::-webkit-color-swatch {
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      border-radius: 50%;
+    }
+
+    .color-hex-label {
+      font-size: 12px;
+      font-family: monospace;
+      color: var(--color-text-secondary, #9e9ea8);
+    }
+
+    /* Sliders de Ajuste */
+    .slider-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-top: 14px;
+    }
+
+    .slider-label-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      flex: 1;
+    }
+
+    .slider-value {
+      font-weight: 600;
+      color: var(--color-accent, #4d7cff);
+    }
+
+    input[type="range"] {
+      appearance: none;
+      width: 180px;
+      height: 6px;
+      border-radius: 3px;
+      background-color: var(--color-bg-input, #18181d);
+      outline: none;
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+      appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background-color: var(--color-accent, #4d7cff);
+      cursor: pointer;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+      transition: transform var(--transition-fast, 0.15s);
+    }
+
+    input[type="range"]::-webkit-slider-thumb:hover {
+      transform: scale(1.2);
+    }
+
+    /* Thumbnail Preview de Fundo */
+    .bg-preview-box {
+      width: 100%;
+      height: 160px;
+      border-radius: var(--radius-md, 6px);
+      border: 1px solid var(--color-border-subtle, #2d2d38);
+      background-color: var(--color-bg-input, #18181d);
+      background-size: cover;
+      background-position: center;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+      margin-top: 12px;
+      margin-bottom: 14px;
+    }
+
+    .bg-preview-empty {
+      color: var(--color-text-muted, #666673);
+      font-size: 13px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .bg-preview-empty svg {
+      width: 32px;
+      height: 32px;
+      fill: currentColor;
+    }
+
+    .bg-preview-dim-overlay {
+      position: absolute;
+      inset: 0;
+      background-color: rgba(0, 0, 0, 0.4);
+      pointer-events: none;
+    }
+
+    /* Toggle Switch Moderno */
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      cursor: pointer;
+    }
+
+    .toggle-info {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .toggle-title {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--color-text-primary, #f0f0f5);
+    }
+
+    .toggle-desc {
+      font-size: 12px;
+      color: var(--color-text-secondary, #9e9ea8);
+    }
+
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 44px;
+      height: 24px;
+      flex-shrink: 0;
+    }
+
+    .switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      inset: 0;
+      background-color: #383844;
+      border-radius: 24px;
+      transition: background-color var(--transition-fast, 0.15s);
+    }
+
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 18px;
+      width: 18px;
+      left: 3px;
+      bottom: 3px;
+      background-color: white;
+      border-radius: 50%;
+      transition: transform var(--transition-fast, 0.15s);
+    }
+
+    input:checked + .slider {
+      background-color: var(--color-accent, #4d7cff);
+    }
+
+    input:checked + .slider:before {
+      transform: translateX(20px);
+    }
+
+    .switch.disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    .switch.disabled input {
+      cursor: not-allowed;
+    }
+
+    .switch.disabled .slider {
+      cursor: not-allowed;
+    }
+
+    /* Badge "Em breve" */
+    .badge-soon {
+      display: inline-flex;
+      align-items: center;
+      padding: 3px 8px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      background-color: rgba(77, 124, 255, 0.15);
+      color: var(--color-accent, #4d7cff);
+      border: 1px solid rgba(77, 124, 255, 0.3);
+    }
+
+    /* Itens da lista de Permissões de Sites */
+    .perm-item-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      background-color: var(--color-bg-input, #18181d);
+      border: 1px solid var(--color-border-subtle, #2d2d38);
+      border-radius: var(--radius-md, 6px);
+      gap: 12px;
+      transition: border-color var(--transition-fast, 0.15s);
+    }
+
+    .perm-item-row:hover {
+      border-color: var(--color-accent, #4d7cff);
+    }
+
+    .perm-item-info {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      flex: 1;
+      min-width: 0;
+    }
+
+    .perm-item-origin {
+      font-weight: 600;
+      color: var(--color-text-primary, #f0f0f5);
+      font-size: 13px;
+      word-break: break-all;
+    }
+
+    .perm-item-detail {
+      font-size: 11px;
+      color: var(--color-text-secondary, #9e9ea8);
+    }
+
+    .perm-item-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .perm-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+
+    .perm-badge.allowed {
+      background-color: rgba(16, 185, 129, 0.15);
+      color: #10b981;
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+
+    .perm-badge.blocked {
+      background-color: rgba(239, 68, 68, 0.15);
+      color: #ef4444;
+      border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- =========================================================================
+       BARRA LATERAL DE NAVEGAÇÃO
+       ========================================================================= -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <div class="sidebar-logo">
+        <img src="../assets/icons/favicon-circle.png" alt="Dragon">
+      </div>
+      <span class="sidebar-title">Configurações</span>
+    </div>
+
+    <nav class="sidebar-nav">
+      <!-- Item 1: Principal -->
+      <button class="nav-item active" data-target="panel-main">
+        <svg viewBox="0 0 16 16">
+          <path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.75.75 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25z"/>
+        </svg>
+        <span>Principal</span>
+      </button>
+
+      <!-- Item 2: Personalização -->
+      <button class="nav-item" data-target="panel-appearance">
+        <svg viewBox="0 0 16 16">
+          <path d="M8 0a8 8 0 1 0 8 8 8 8 0 0 0-8-8zm0 14.5a6.5 6.5 0 0 1 0-13 1 1 0 0 1 1 1v.5a1.5 1.5 0 0 0 1.5 1.5h1a1.5 1.5 0 0 0 1.5-1.5v-.5a1 1 0 0 1 1-1 6.5 6.5 0 0 1-6 13zm-2.5-9a1 1 0 1 1 0-2 1 1 0 0 1 0 2zm-2 3a1 1 0 1 1 0-2 1 1 0 0 1 0 2zm2 3a1 1 0 1 1 0-2 1 1 0 0 1 0 2z"/>
+        </svg>
+        <span>Personalização</span>
+      </button>
+
+      <!-- Item 3: Proxy -->
+      <button class="nav-item" data-target="panel-proxy">
+        <svg viewBox="0 0 16 16">
+          <path d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8zm7.25-6.97A6.51 6.51 0 0 0 1.55 7.25h2.89c.12-1.8.68-3.4 1.56-4.57.42-.56.9-.99 1.25-1.65zm1.5 0c.35.66.83 1.09 1.25 1.65.88 1.17 1.44 2.77 1.56 4.57h2.89a6.51 6.51 0 0 0-5.7-6.22zM8.75 8.75v5.72a6.51 6.51 0 0 0 5.7-5.72h-2.89c-.12 1.8-.68 3.4-1.56 4.57-.42.56-.9.99-1.25 1.15zM7.25 14.47c-.35-.16-.83-.59-1.25-1.15-.88-1.17-1.44-2.77-1.56-4.57H1.55a6.51 6.51 0 0 0 5.7 5.72zM8 2.5a14.2 14.2 0 0 0-2.02 4.75h4.04A14.2 14.2 0 0 0 8 2.5zm-2.02 6.25c.34 2.05 1.1 3.96 2.02 4.75.92-.79 1.68-2.7 2.02-4.75H5.98z"/>
+        </svg>
+        <span>Proxy</span>
+      </button>
+
+      <!-- Item 4: Permissões de Sites -->
+      <button class="nav-item" data-target="panel-permissions">
+        <svg viewBox="0 0 16 16">
+          <path d="M8 1a2 2 0 0 1 2 2v4H6V3a2 2 0 0 1 2-2zm3 6V3a3 3 0 0 0-6 0v4a2 2 0 0 0-2 2v5a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/>
+        </svg>
+        <span>Permissões</span>
+      </button>
+
+      <!-- Item 5: Privacidade Avançada (Fingerprinting - ETAPA 5) -->
+      <button class="nav-item" data-target="panel-fingerprint">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M2 12C2 6.5 6.5 2 12 2a10 10 0 0 1 8 4"/>
+          <path d="M5 19.5C5.5 18 6 15 6 12c0-.7.12-1.37.34-2"/>
+          <path d="M17.29 21.02c.12-.6.18-1.2.18-1.85 0-3.5-1.5-6.5-4.5-8.5"/>
+          <path d="M9.08 9c.6-.8 1.43-1.37 2.42-1.63"/>
+          <path d="M12 22a10 10 0 0 0 6.5-2.5"/>
+          <path d="M12 6a6 6 0 0 1 6 6c0 2.22-1.21 4.16-3 5.2"/>
+          <path d="M8.7 13.5c-.37-.8-.57-1.7-.57-2.65a4 4 0 0 1 4-4c1.1 0 2.1.45 2.83 1.17"/>
+        </svg>
+        <span>Privacidade Avançada</span>
+      </button>
+    </nav>
+
+    <div class="sidebar-footer">
+      <span>Dragon Browser • v1.0.0</span>
+    </div>
+  </aside>
+
+  <!-- =========================================================================
+       ÁREA PRINCIPAL DE CONTEÚDO
+       ========================================================================= -->
+  <main class="content-area">
+
+    <!-- -----------------------------------------------------------------------
+         PAINEL 1: PRINCIPAL
+         ----------------------------------------------------------------------- -->
+    <section id="panel-main" class="panel active">
+      <div class="panel-header">
+        <h1>Principal</h1>
+        <p>Configurações de busca, inicialização e navegação geral.</p>
+      </div>
+
+      <!-- Buscador Padrão -->
+      <div class="settings-card">
+        <h2 class="card-title">Mecanismo de busca padrão</h2>
+        <p class="card-desc">Usado para termos digitados na barra de endereços e na página de nova aba.</p>
+
+        <div class="form-group">
+          <select id="select-search-engine">
+            <option value="duckduckgo">DuckDuckGo (Padrão e Privado)</option>
+            <option value="google">Google</option>
+            <option value="bing">Bing</option>
+            <option value="brave">Brave Search</option>
+            <option value="startpage">Startpage</option>
+            <option value="ecosia">Ecosia</option>
+            <option value="custom">Personalizado</option>
+          </select>
+        </div>
+
+        <div id="wrap-custom-search" class="form-group" style="display: none;">
+          <label for="input-custom-search">URL do mecanismo personalizado</label>
+          <input
+            type="url"
+            id="input-custom-search"
+            placeholder="https://exemplo.com/search?q=%s"
+          />
+          <span class="help-text">Use <code>%s</code> no lugar da palavra-chave pesquisada.</span>
+        </div>
+      </div>
+
+      <!-- Ao Iniciar -->
+      <div class="settings-card">
+        <h2 class="card-title">Ao iniciar</h2>
+        <p class="card-desc">Defina o que o Dragon deve abrir quando for inicializado.</p>
+
+        <div class="radio-group">
+          <label class="radio-option">
+            <input type="radio" name="startupBehavior" value="newtab" id="startup-newtab" checked />
+            <span class="radio-label">Abrir a página de nova aba</span>
+          </label>
+
+          <label class="radio-option">
+            <input type="radio" name="startupBehavior" value="restore" id="startup-restore" />
+            <span class="radio-label">Restaurar as abas da última sessão (não restaura abas privadas)</span>
+          </label>
+
+          <label class="radio-option">
+            <input type="radio" name="startupBehavior" value="custom" id="startup-custom" />
+            <span class="radio-label">Abrir uma página específica</span>
+          </label>
+        </div>
+
+        <div id="wrap-startup-url" class="form-group" style="display: none; margin-top: 14px;">
+          <label for="input-startup-url">Endereço da página de inicialização</label>
+          <input
+            type="url"
+            id="input-startup-url"
+            placeholder="https://duckduckgo.com"
+          />
+        </div>
+      </div>
+
+      <!-- Página Inicial Personalizada -->
+      <div class="settings-card">
+        <h2 class="card-title">Página inicial personalizada</h2>
+        <p class="card-desc">Endereço utilizado como sua página inicial principal.</p>
+
+        <div class="form-group">
+          <input
+            type="url"
+            id="input-home-url"
+            placeholder="https://duckduckgo.com"
+          />
+        </div>
+      </div>
+
+      <!-- Zoom Padrão das Páginas -->
+      <div class="settings-card">
+        <h2 class="card-title">Zoom padrão das páginas</h2>
+        <p class="card-desc">Escala de exibição padrão aplicada a todos os sites.</p>
+
+        <div class="form-group">
+          <select id="select-zoom">
+            <option value="0.5">50%</option>
+            <option value="0.75">75%</option>
+            <option value="0.8">80%</option>
+            <option value="0.9">90%</option>
+            <option value="1.0" selected>100% (Padrão)</option>
+            <option value="1.1">110%</option>
+            <option value="1.25">125%</option>
+            <option value="1.5">150%</option>
+            <option value="1.75">175%</option>
+            <option value="2.0">200%</option>
+          </select>
+        </div>
+      </div>
+    </section>
+
+    <!-- -----------------------------------------------------------------------
+         PAINEL 2: PERSONALIZAÇÃO
+         ----------------------------------------------------------------------- -->
+    <section id="panel-appearance" class="panel">
+      <div class="panel-header">
+        <h1>Personalização</h1>
+        <p>Aparência, cores, temas e imagem de fundo da nova aba.</p>
+      </div>
+
+      <!-- Cor de Destaque -->
+      <div class="settings-card">
+        <h2 class="card-title">Cor de destaque</h2>
+        <p class="card-desc">Aplicada em tempo real na interface do navegador, bordas de foco e indicadores.</p>
+
+        <div class="color-picker-grid">
+          <button class="color-swatch active" style="background-color: #4d7cff;" data-color="#4d7cff" title="Azul Dragon"></button>
+          <button class="color-swatch" style="background-color: #0194FF;" data-color="#0194FF" title="Ciano Elétrico"></button>
+          <button class="color-swatch" style="background-color: #10b981;" data-color="#10b981" title="Esmeralda"></button>
+          <button class="color-swatch" style="background-color: #8b5cf6;" data-color="#8b5cf6" title="Violeta"></button>
+          <button class="color-swatch" style="background-color: #ec4899;" data-color="#ec4899" title="Rosa"></button>
+          <button class="color-swatch" style="background-color: #f59e0b;" data-color="#f59e0b" title="Âmbar"></button>
+          <button class="color-swatch" style="background-color: #ef4444;" data-color="#ef4444" title="Coral"></button>
+
+          <div class="custom-color-wrap">
+            <input type="color" id="input-accent-color" value="#4d7cff" title="Escolher cor livre" />
+            <span id="label-accent-hex" class="color-hex-label">#4d7cff</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tema -->
+      <div class="settings-card">
+        <h2 class="card-title">Tema</h2>
+        <p class="card-desc">Selecione o esquema de cores para a janela do navegador.</p>
+
+        <div class="radio-group">
+          <label class="radio-option">
+            <input type="radio" name="themeOption" value="dark" id="theme-dark" checked />
+            <span class="radio-label">Escuro (Padrão)</span>
+          </label>
+
+          <label class="radio-option">
+            <input type="radio" name="themeOption" value="light" id="theme-light" />
+            <span class="radio-label">Claro</span>
+          </label>
+
+          <label class="radio-option">
+            <input type="radio" name="themeOption" value="system" id="theme-system" />
+            <span class="radio-label">Seguir o sistema</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Imagem de Fundo da Nova Aba -->
+      <div class="settings-card">
+        <h2 class="card-title">Imagem de fundo da nova aba</h2>
+        <p class="card-desc">Escolha uma imagem do seu computador. Ela é copiada com segurança para a pasta do usuário.</p>
+
+        <!-- Caixa de Pré-visualização -->
+        <div id="bg-preview-box" class="bg-preview-box">
+          <div id="bg-preview-empty" class="bg-preview-empty">
+            <svg viewBox="0 0 24 24">
+              <path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/>
+            </svg>
+            <span>Nenhuma imagem de fundo selecionada</span>
+          </div>
+          <div id="bg-preview-overlay" class="bg-preview-dim-overlay" style="display: none;"></div>
+        </div>
+
+        <div style="display: flex; gap: 12px; margin-bottom: 16px;">
+          <button id="btn-choose-bg" class="btn btn-primary">
+            <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+              <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
+              <path d="M7.646 1.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1-.708.708L8.5 2.707V10.5a.5.5 0 0 1-1 0V2.707L5.354 4.854a.5.5 0 1 1-.708-.708l3-3z"/>
+            </svg>
+            <span>Escolher imagem...</span>
+          </button>
+
+          <button id="btn-remove-bg" class="btn btn-danger" style="display: none;">
+            <span>Remover imagem</span>
+          </button>
+        </div>
+
+        <!-- Controles de Escurecimento e Desfoque -->
+        <div class="slider-row">
+          <div class="slider-label-wrap">
+            <label for="slider-dim">Escurecimento do fundo</label>
+            <span class="help-text">Garante alto contraste e legibilidade da busca</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <input type="range" id="slider-dim" min="0" max="90" value="40" />
+            <span id="label-dim-value" class="slider-value" style="width: 38px; text-align: right;">40%</span>
+          </div>
+        </div>
+
+        <div class="slider-row">
+          <div class="slider-label-wrap">
+            <label for="slider-blur">Desfoque do fundo</label>
+            <span class="help-text">Suaviza detalhes da imagem para foco no conteúdo</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <input type="range" id="slider-blur" min="0" max="20" value="4" />
+            <span id="label-blur-value" class="slider-value" style="width: 38px; text-align: right;">4px</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Atalhos na Nova Aba -->
+      <div class="settings-card">
+        <div class="toggle-row">
+          <div class="toggle-info">
+            <span class="toggle-title">Atalhos de teclado na nova aba</span>
+            <span class="toggle-desc">Exibir tabela com atalhos rápidos no centro da página inicial</span>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="toggle-shortcuts" checked />
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <!-- -----------------------------------------------------------------------
+         PAINEL 3: PROXY
+         ----------------------------------------------------------------------- -->
+    <section id="panel-proxy" class="panel">
+      <div class="panel-header">
+        <h1>Proxy</h1>
+        <p>Configurações de rede e tráfego através de servidor proxy.</p>
+      </div>
+
+      <div class="settings-card">
+        <div class="toggle-row" style="margin-bottom: 16px;">
+          <div class="toggle-info">
+            <span class="toggle-title">Habilitar servidor proxy</span>
+            <span class="toggle-desc">Roteia as conexões web através de um intermediário de rede</span>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="toggle-proxy-enabled" />
+            <span class="slider"></span>
+          </label>
+        </div>
+
+        <div id="proxy-fields" style="display: none; flex-direction: column; gap: 14px;">
+          <div class="form-group">
+            <label for="select-proxy-protocol">Protocolo</label>
+            <select id="select-proxy-protocol">
+              <option value="http">HTTP</option>
+              <option value="https">HTTPS</option>
+              <option value="socks5">SOCKS5</option>
+            </select>
+          </div>
+
+          <div style="display: flex; gap: 12px;">
+            <div class="form-group" style="flex: 3;">
+              <label for="input-proxy-host">Servidor / Host</label>
+              <input type="text" id="input-proxy-host" placeholder="ex: 127.0.0.1 ou proxy.exemplo.com" />
+            </div>
+            <div class="form-group" style="flex: 1;">
+              <label for="input-proxy-port">Porta</label>
+              <input type="text" id="input-proxy-port" placeholder="ex: 8080" />
+            </div>
+          </div>
+
+          <div style="display: flex; gap: 12px;">
+            <div class="form-group" style="flex: 1;">
+              <label for="input-proxy-username">Usuário (opcional)</label>
+              <input type="text" id="input-proxy-username" placeholder="Usuário para autenticação" autocomplete="off" />
+            </div>
+            <div class="form-group" style="flex: 1;">
+              <label for="input-proxy-password">Senha (criptografada em disco)</label>
+              <input type="password" id="input-proxy-password" placeholder="Senha do proxy" autocomplete="off" />
+            </div>
+          </div>
+
+          <div class="toggle-row" style="margin-top: 8px;">
+            <div class="toggle-info">
+              <span class="toggle-title">Aplicar também em abas privadas</span>
+              <span class="toggle-desc">Usa as mesmas configurações de proxy em sessões privadas</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="toggle-proxy-apply-private" />
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <div style="display: flex; align-items: center; gap: 14px; margin-top: 10px;">
+            <button type="button" id="btn-test-proxy" class="btn btn-secondary">
+              <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                <path d="M11.534 7h3.932a.25.25 0 0 1 .192.41l-1.966 2.36a.25.25 0 0 1-.384 0l-1.966-2.36a.25.25 0 0 1 .192-.41zm-11 2h3.932a.25.25 0 0 0 .192-.41L2.692 6.23a.25.25 0 0 0-.384 0L.342 8.59A.25.25 0 0 0 .534 9z"/>
+                <path d="M8 3c-1.552 0-2.94.707-3.857 1.818a.5.5 0 1 1-.771-.636A6.002 6.002 0 0 1 13.917 7H12.9A5.002 5.002 0 0 0 8 3zM3.1 9a5.002 5.002 0 0 0 4.9 4c1.552 0 2.94-.707 3.857-1.818a.5.5 0 1 1 .771.636A6.002 6.002 0 0 1 2.083 9H3.1z"/>
+              </svg>
+              <span>Testar Conexão</span>
+            </button>
+            <span id="proxy-test-status" class="help-text"></span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- -----------------------------------------------------------------------
+         PAINEL 4: PERMISSÕES DE SITES
+         ----------------------------------------------------------------------- -->
+    <section id="panel-permissions" class="panel">
+      <div class="panel-header">
+        <h1>Permissões de Sites</h1>
+        <p>Gerencie o acesso de sites a recursos como microfone, câmera, localização e notificações.</p>
+      </div>
+
+      <div class="settings-card">
+        <h2 class="card-title">Permissões salvas</h2>
+        <p class="card-desc">Lista de permissões concedidas ou bloqueadas por domínio com persistência.</p>
+
+        <div id="permissions-list-container" style="display: flex; flex-direction: column; gap: 8px; margin-top: 12px;">
+          <!-- Renderizado dinamicamente via JS -->
+          <div id="permissions-empty" class="help-text" style="padding: 12px 0;">Nenhuma permissão cadastrada até o momento.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- -----------------------------------------------------------------------
+         PAINEL 5: PRIVACIDADE AVANÇADA (SISTEMA DE FINGERPRINTING MULTIVETORIAL)
+         ----------------------------------------------------------------------- -->
+    <section id="panel-fingerprint" class="panel">
+      <div class="panel-header" style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px;">
+        <div>
+          <h1>Privacidade Avançada</h1>
+          <p>Configuração profunda da impressão digital (fingerprint) do Dragon com validação de consistência e reset de identidade.</p>
+        </div>
+        <button type="button" id="btn-reset-fingerprint" class="btn btn-primary" style="display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; font-weight: 600; box-shadow: 0 0 12px var(--fire-glow, rgba(1,148,255,0.4));">
+          <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+            <path d="M11.534 7h3.932a.25.25 0 0 1 .192.41l-1.966 2.36a.25.25 0 0 1-.384 0l-1.966-2.36a.25.25 0 0 1 .192-.41zm-11 2h3.932a.25.25 0 0 0 .192-.41L2.692 6.23a.25.25 0 0 0-.384 0L.342 8.59A.25.25 0 0 0 .534 9z"/>
+            <path fill-rule="evenodd" d="M8 3c-1.552 0-2.94.707-3.857 1.818a.5.5 0 1 1-.771-.636A4.985 4.985 0 0 1 8 2c2.166 0 3.993 1.373 4.678 3.308a.5.5 0 0 1-.942.338C11.144 4.025 9.697 3 8 3zm0 10c1.552 0 2.94-.707 3.857-1.818a.5.5 0 1 1 .771.636A4.985 4.985 0 0 1 8 14c-2.166 0-3.993-1.373-4.678-3.308a.5.5 0 0 1 .942-.338C4.856 11.975 6.303 13 8 13z"/>
+          </svg>
+          Resetar Fingerprint
+        </button>
+      </div>
+
+      <!-- Banner de Inconsistência e Avisos -->
+      <div id="fp-consistency-box" style="display: none; padding: 12px 16px; border-radius: var(--radius-md, 6px); margin-bottom: 20px; font-size: 13px; line-height: 1.5;"></div>
+
+      <div class="settings-card">
+        <div class="toggle-row">
+          <div class="toggle-info">
+            <span class="toggle-title">Reduzir impressão digital do navegador (Fingerprinting)</span>
+            <span class="toggle-desc">Ativa as proteções ativas e máscaras em páginas web normais. <strong>Esta configuração é global e NÃO cria perfis nem contas separadas.</strong> O botão "Resetar Fingerprint" sorteia uma nova identidade coerente a qualquer momento.</span>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="toggle-fp-enabled" />
+            <span class="slider"></span>
+          </label>
+        </div>
+
+        <div id="fp-suboptions" style="display: flex; flex-direction: column; gap: 24px; margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--color-border-subtle, #2d2d38); transition: opacity var(--transition-fast, 0.15s);">
+          
+          <!-- GRUPO A: IDENTIDADE DO SISTEMA -->
+          <div>
+            <h3 class="card-title" style="margin-bottom: 4px;">Grupo A — Identidade do Sistema</h3>
+            <p class="card-desc">Define como o sistema operacional, navegador, fuso horário e idioma são apresentados para a web.</p>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+              <div class="form-group">
+                <label for="select-fp-os">Sistema Operacional Alvo</label>
+                <select id="select-fp-os">
+                  <option value="windows11">Windows 11 (Padrão Moderno)</option>
+                  <option value="windows10">Windows 10</option>
+                  <option value="macos">macOS (Sonoma / Sequoia)</option>
+                  <option value="linux">Linux (Ubuntu / Fedora)</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="select-fp-browser">Navegador Relatado</label>
+                <select id="select-fp-browser">
+                  <option value="chrome">Google Chrome (Recomendado)</option>
+                  <option value="edge">Microsoft Edge</option>
+                  <option value="firefox">Mozilla Firefox</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="select-fp-platform">Plataforma (navigator.platform)</label>
+                <select id="select-fp-platform">
+                  <option value="auto">Automático (Coerente com o SO)</option>
+                  <option value="Win32">Win32 (Windows)</option>
+                  <option value="MacIntel">MacIntel (macOS)</option>
+                  <option value="Linux x86_64">Linux x86_64 (Linux)</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="select-fp-locale">Idioma do Navegador (Locale)</label>
+                <select id="select-fp-locale">
+                  <option value="pt-BR">Português do Brasil (pt-BR)</option>
+                  <option value="en-US">English / Estados Unidos (en-US)</option>
+                  <option value="es-ES">Español / Espanha (es-ES)</option>
+                  <option value="fr-FR">Français / França (fr-FR)</option>
+                  <option value="de-DE">Deutsch / Alemanha (de-DE)</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="select-fp-timezone">Fuso Horário (Timezone)</label>
+                <select id="select-fp-timezone">
+                  <option value="America/Sao_Paulo">América/São Paulo (GMT-3)</option>
+                  <option value="America/New_York">América/Nova York (GMT-5 / EDT)</option>
+                  <option value="America/Chicago">América/Chicago (GMT-6 / CDT)</option>
+                  <option value="America/Los_Angeles">América/Los Angeles (GMT-8 / PDT)</option>
+                  <option value="Europe/London">Europa/Londres (GMT+0 / BST)</option>
+                  <option value="Europe/Paris">Europa/Paris (GMT+1 / CEST)</option>
+                  <option value="Europe/Berlin">Europa/Berlim (GMT+1 / CEST)</option>
+                  <option value="Europe/Madrid">Europa/Madri (GMT+1 / CEST)</option>
+                  <option value="Asia/Tokyo">Ásia/Tóquio (GMT+9)</option>
+                  <option value="UTC">UTC (Universal / GMT+0)</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="input-fp-ua">User-Agent</label>
+                <input type="text" id="input-fp-ua" placeholder="auto (gerado automaticamente pelo SO e Navegador)" />
+                <span class="help-text">Digite <code>auto</code> para derivar automaticamente ou insira uma assinatura personalizada.</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- GRUPO B: HARDWARE -->
+          <div style="border-top: 1px solid var(--color-border-subtle, #2d2d38); padding-top: 16px;">
+            <h3 class="card-title" style="margin-bottom: 4px;">Grupo B — Hardware e Resolução</h3>
+            <p class="card-desc">Especificações técnicas de tela, processador e memória relatadas para as páginas.</p>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+              <div class="form-group">
+                <label for="select-fp-resolution">Resolução de Tela</label>
+                <select id="select-fp-resolution">
+                  <option value="1920x1080">1920 × 1080 (Full HD, Mais Comum)</option>
+                  <option value="2560x1440">2560 × 1440 (2K / QHD)</option>
+                  <option value="1366x768">1366 × 768 (Notebook Padrão)</option>
+                  <option value="1536x864">1536 × 864 (Notebook Alta Densidade)</option>
+                  <option value="2880x1800">2880 × 1800 (MacBook Pro Retina)</option>
+                  <option value="3840x2160">3840 × 2160 (4K UHD)</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="select-fp-dpr">Device Pixel Ratio (DPR)</label>
+                <select id="select-fp-dpr">
+                  <option value="auto">Automático (Baseado na Resolução)</option>
+                  <option value="1">1.0 (Padrão 100%)</option>
+                  <option value="1.25">1.25 (Escala 125%)</option>
+                  <option value="1.5">1.5 (Escala 150%)</option>
+                  <option value="2">2.0 (Retina / Alta Densidade)</option>
+                  <option value="3">3.0 (Ultra Densidade)</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="select-fp-cores">Núcleos de Processamento (CPU Cores)</label>
+                <select id="select-fp-cores">
+                  <option value="2">2 núcleos</option>
+                  <option value="4">4 núcleos</option>
+                  <option value="6">6 núcleos</option>
+                  <option value="8">8 núcleos (Mais comum)</option>
+                  <option value="12">12 núcleos</option>
+                  <option value="16">16 núcleos</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="select-fp-memory">Memória RAM Relatada</label>
+                <select id="select-fp-memory">
+                  <option value="2">2 GB</option>
+                  <option value="4">4 GB</option>
+                  <option value="8">8 GB (Mais comum)</option>
+                  <option value="16">16 GB</option>
+                  <option value="32">32 GB</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="toggle-row" style="margin-top: 14px;">
+              <div class="toggle-info">
+                <span class="toggle-title">Suporte a Tela Sensível ao Toque (Touch)</span>
+                <span class="toggle-desc">Define <code>navigator.maxTouchPoints</code>. Desative para computadores desktop tradicionais.</span>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="toggle-fp-touch" />
+                <span class="slider"></span>
+              </label>
+            </div>
+          </div>
+
+          <!-- GRUPO C: GPU / WEBGL -->
+          <div style="border-top: 1px solid var(--color-border-subtle, #2d2d38); padding-top: 16px;">
+            <h3 class="card-title" style="margin-bottom: 4px;">Grupo C — Placa de Vídeo e WebGL</h3>
+            <p class="card-desc">Fabricante e modelo da placa de vídeo expostos via extensões não-mascaradas do WebGL.</p>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+              <div class="form-group">
+                <label for="input-fp-webgl-vendor">Fabricante da GPU (Vendor)</label>
+                <input type="text" id="input-fp-webgl-vendor" placeholder="auto (gerado automaticamente pelo SO)" />
+              </div>
+
+              <div class="form-group">
+                <label for="input-fp-webgl-renderer">Renderizador de Vídeo (Renderer)</label>
+                <input type="text" id="input-fp-webgl-renderer" placeholder="auto (gerado automaticamente pelo SO)" />
+              </div>
+
+              <div class="form-group" style="grid-column: span 2;">
+                <label for="select-fp-webgl-mode">Proteção de Renderização WebGL (readPixels)</label>
+                <select id="select-fp-webgl-mode">
+                  <option value="noise">Ruído Determinístico por Sessão (Recomendado — não quebra sites)</option>
+                  <option value="real">Real (Sem Alteração)</option>
+                  <option value="mask">Máscara Fixa</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- GRUPO D: CANVAS, ÁUDIO, CLIENTRECTS & FONTES -->
+          <div style="border-top: 1px solid var(--color-border-subtle, #2d2d38); padding-top: 16px;">
+            <h3 class="card-title" style="margin-bottom: 4px;">Grupo D — Canvas, Áudio, ClientRects & Fontes</h3>
+            <p class="card-desc">Vetores biométricos complexos que geram assinaturas cruzadas de renderização de imagem e som.</p>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+              <div class="form-group">
+                <label for="select-fp-canvas-mode">Proteção do Canvas 2D (toDataURL / getImageData)</label>
+                <select id="select-fp-canvas-mode">
+                  <option value="noise">Ruído Determinístico por Sessão (Recomendado — imperceptível)</option>
+                  <option value="real">Real (Sem Alteração)</option>
+                  <option value="mask">Máscara Fixa</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="select-fp-audio-mode">Proteção de AudioContext / Frequência Sonora</label>
+                <select id="select-fp-audio-mode">
+                  <option value="noise">Ruído Determinístico por Sessão (Recomendado)</option>
+                  <option value="real">Real (Sem Alteração)</option>
+                  <option value="mask">Máscara Fixa</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="select-fp-clientrects-mode">Geometria de Elementos (ClientRects)</label>
+                <select id="select-fp-clientrects-mode">
+                  <option value="noise">Micro-Ruído Determinístico (Recomendado — ±0.05px)</option>
+                  <option value="mask">Arredondamento para Inteiros</option>
+                  <option value="real">Real (Sem Alteração)</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="select-fp-fonts-mode">Enumeração de Fontes do Sistema</label>
+                <select id="select-fp-fonts-mode">
+                  <option value="mask">Filtrar para Fontes Padrão do SO Alvo (Recomendado)</option>
+                  <option value="real">Real (Expõe todas as fontes instaladas)</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- GRUPO E: OUTROS VETORES -->
+          <div style="border-top: 1px solid var(--color-border-subtle, #2d2d38); padding-top: 16px;">
+            <h3 class="card-title" style="margin-bottom: 4px;">Grupo E — Outros Vetores (WebRTC, Bateria, Permissões)</h3>
+            <p class="card-desc">Controle de vazamentos de rede local e APIs de hardware auxiliares.</p>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+              <div class="form-group">
+                <label for="select-fp-webrtc-mode">Política de WebRTC</label>
+                <select id="select-fp-webrtc-mode">
+                  <option value="proxy">Interface Pública Padrão (Sem Vazamento de IP Local)</option>
+                  <option value="disabled">Desabilitar WebRTC Completamente</option>
+                  <option value="real">Real (Sem Restrições)</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="select-fp-media-count">Dispositivos de Mídia Simulados (enumerateDevices)</label>
+                <select id="select-fp-media-count">
+                  <option value="2">2 dispositivos (Microfone + Câmera)</option>
+                  <option value="1">1 dispositivo (Apenas Microfone)</option>
+                  <option value="3">3 dispositivos (Microfone + Câmera + Alto-falante)</option>
+                  <option value="0">Nenhum dispositivo de mídia</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="select-fp-speech-voices">Vozes de Síntese de Fala (SpeechVoices)</label>
+                <select id="select-fp-speech-voices">
+                  <option value="mask">Máscara Padrão do SO Alvo</option>
+                  <option value="real">Real (Sem Alteração)</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="select-fp-battery-mode">Status de Bateria (getBattery)</label>
+                <select id="select-fp-battery-mode">
+                  <option value="mask">Mascarar (Sempre 100% Carregando)</option>
+                  <option value="real">Real (Nível Real da Bateria)</option>
+                </select>
+              </div>
+
+              <div class="form-group" style="grid-column: span 2;">
+                <label for="select-fp-permissions-mode">Consulta de Permissões (permissions.query)</label>
+                <select id="select-fp-permissions-mode">
+                  <option value="mask">Mascarar como Prompt Padrão (Recomendado)</option>
+                  <option value="real">Real (Expõe permissões já concedidas)</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- =========================================================================
+       SCRIPT DO LADO DO CLIENTE (CONSUMIDOR DE window.settingsAPI)
+       ========================================================================= -->
+  <script src="settings.js"></script>
+</body>
+</html>

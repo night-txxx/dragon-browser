@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;">
+  <title>Downloads - Dragon</title>
+  <link rel="stylesheet" href="../src/renderer/styles/theme.css">
+  <style>
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--color-bg-window, #1e1e24);
+      color: var(--color-text-primary, #f0f0f5);
+      font-family: var(--font-family-base, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif);
+      font-size: var(--font-size-base, 13px);
+      line-height: 1.5;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      user-select: none;
+    }
+
+    header {
+      background-color: var(--color-bg-toolbar, #23232b);
+      border-bottom: 1px solid var(--color-border-subtle, #2d2d38);
+      padding: 20px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .header-logo {
+      width: 32px;
+      height: 32px;
+      filter: drop-shadow(0 0 5px rgba(41, 182, 255, 0.45));
+      transition: filter 0.25s ease, transform 0.25s ease;
+    }
+
+    .header-logo:hover {
+      transform: scale(1.08);
+      filter: drop-shadow(0 0 8px rgba(41, 182, 255, 0.75));
+    }
+
+    .header-title {
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: -0.3px;
+    }
+
+    .btn-clear {
+      background-color: rgba(255, 77, 77, 0.12);
+      border: 1px solid rgba(255, 77, 77, 0.3);
+      color: #ff6b6b;
+      padding: 8px 14px;
+      border-radius: var(--radius-md, 6px);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background-color 0.15s;
+    }
+
+    .btn-clear:hover {
+      background-color: rgba(255, 77, 77, 0.22);
+    }
+
+    main {
+      flex: 1;
+      max-width: 860px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 32px 24px;
+    }
+
+    .downloads-card {
+      background-color: var(--color-bg-toolbar, #23232b);
+      border: 1px solid var(--color-border-subtle, #2d2d38);
+      border-radius: var(--radius-lg, 8px);
+      overflow: hidden;
+    }
+
+    .download-item {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--color-border-subtle, #2d2d38);
+      transition: background-color 0.15s;
+    }
+
+    .download-item:last-child {
+      border-bottom: none;
+    }
+
+    .download-icon {
+      width: 22px;
+      height: 22px;
+      fill: var(--color-accent, #4d7cff);
+      flex-shrink: 0;
+    }
+
+    .item-info {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .item-filename {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--color-text-primary, #f0f0f5);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      cursor: pointer;
+    }
+
+    .item-filename:hover {
+      text-decoration: underline;
+    }
+
+    .item-meta {
+      font-size: 12px;
+      color: var(--color-text-secondary, #9e9ea8);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .status-completed {
+      color: #00c853;
+    }
+
+    .status-cancelled {
+      color: #ff6b6b;
+    }
+
+    .status-progressing {
+      color: var(--color-accent, #4d7cff);
+    }
+
+    .download-progress-wrap {
+      width: 100%;
+      height: 6px;
+      background-color: var(--color-bg-input, #18181d);
+      border-radius: 3px;
+      overflow: hidden;
+      margin-top: 4px;
+    }
+
+    .download-progress-bar {
+      height: 100%;
+      background-color: var(--color-accent, #4d7cff);
+      border-radius: 3px;
+      transition: width 0.2s ease;
+    }
+
+    .download-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn-action {
+      background-color: var(--color-bg-input, #18181d);
+      border: 1px solid var(--color-border-subtle, #2d2d38);
+      color: var(--color-text-primary, #f0f0f5);
+      padding: 6px 12px;
+      border-radius: var(--radius-md, 6px);
+      font-size: 12px;
+      cursor: pointer;
+      transition: background-color 0.15s;
+    }
+
+    .btn-action:hover {
+      background-color: var(--color-bg-button-hover, #333340);
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--color-text-muted, #666673);
+    }
+
+    .empty-state svg {
+      width: 48px;
+      height: 48px;
+      fill: currentColor;
+      margin-bottom: 12px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="header-left">
+      <img src="../assets/icons/favicon-circle.png" alt="Dragon" class="header-logo" />
+      <h1 class="header-title">Downloads</h1>
+    </div>
+    <button id="btn-clear-all" class="btn-clear">Limpar Histórico de Downloads</button>
+  </header>
+
+  <main>
+    <div id="downloads-container" class="downloads-card">
+      <div class="empty-state">
+        <svg viewBox="0 0 16 16">
+          <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
+          <path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z"/>
+        </svg>
+        <p>Nenhum download recente</p>
+      </div>
+    </div>
+  </main>
+
+  <script src="downloads.js"></script>
+</body>
+</html>
