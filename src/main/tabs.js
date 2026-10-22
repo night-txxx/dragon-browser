@@ -972,7 +972,7 @@ function closeActiveTab() {
  * sejam totalmente desalocadas da memória durante a animação de chamas.
  * @returns {number} Quantidade de abas fechadas
  */
-function destroyAllTabs() {
+async function destroyAllTabs() {
   const count = tabs.length;
   const tabsToClose = [...tabs];
   tabs = [];
@@ -985,6 +985,8 @@ function destroyAllTabs() {
     }
   }
   trackerThrottleMap.clear();
+
+  const closePromises = [];
 
   for (const tab of tabsToClose) {
     if (tab && tab.view) {
@@ -1003,15 +1005,31 @@ function destroyAllTabs() {
             mainWindowRef.contentView.removeChildView(tab.view);
           } catch {}
         }
+
         if (wc && !wc.isDestroyed()) {
-          try {
-            wc.close();
-          } catch {}
+          const p = new Promise((resolve) => {
+            const timer = setTimeout(resolve, 500);
+            wc.once('destroyed', () => {
+              clearTimeout(timer);
+              resolve();
+            });
+            try {
+              wc.close();
+            } catch {
+              clearTimeout(timer);
+              resolve();
+            }
+          });
+          closePromises.push(p);
         }
       } catch (err) {
         console.warn(`[TabManager] Aviso ao destruir aba ${tab.id}:`, err.message);
       }
     }
+  }
+
+  if (closePromises.length > 0) {
+    await Promise.allSettled(closePromises);
   }
 
   // Bloco 2.1: Limpa a pilha de abas fechadas (Ctrl+Shift+T não pode reabrir abas apagadas)

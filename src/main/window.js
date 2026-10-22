@@ -10,7 +10,7 @@ const windowState = require('./window-state');
 
 let mainWindow = null;
 let tabManagerRef = null;
-let isOverlayActive = false;
+const overlayOwners = new Set();
 let isHtmlFullScreen = false;
 let isFindBarOpen = false;
 const FIND_BAR_HEIGHT = 44;
@@ -104,8 +104,8 @@ function getIsHtmlFullScreen() {
  * da barra superior, chamamos showOverlay() para esconder o site e permitir que o
  * HTML da interface seja visto.
  */
-function showOverlay() {
-  isOverlayActive = true;
+function showOverlay(owner = 'default') {
+  overlayOwners.add(owner);
   if (!tabManagerRef) return;
   const activeTab = tabManagerRef.getActiveTab();
   if (activeTab && activeTab.view) {
@@ -116,14 +116,20 @@ function showOverlay() {
 /**
  * Restaura a visualização da WebContentsView ativa após o fechamento de um menu ou modal.
  */
-function hideOverlay() {
-  isOverlayActive = false;
-  if (!tabManagerRef) return;
-  const activeTab = tabManagerRef.getActiveTab();
-  if (activeTab && activeTab.view) {
-    activeTab.view.setVisible(true);
-    // Garante que o layout esteja ajustado ao tamanho atual da janela
-    updateActiveViewBounds();
+function hideOverlay(owner = 'default') {
+  if (owner === '*') {
+    overlayOwners.clear();
+  } else {
+    overlayOwners.delete(owner);
+  }
+  if (overlayOwners.size === 0) {
+    if (!tabManagerRef) return;
+    const activeTab = tabManagerRef.getActiveTab();
+    if (activeTab && activeTab.view) {
+      activeTab.view.setVisible(true);
+      // Garante que o layout esteja ajustado ao tamanho atual da janela
+      updateActiveViewBounds();
+    }
   }
 }
 
@@ -131,7 +137,7 @@ function hideOverlay() {
  * Retorna se o overlay está ativo no momento
  */
 function getIsOverlayActive() {
-  return isOverlayActive;
+  return overlayOwners.size > 0;
 }
 
 /**

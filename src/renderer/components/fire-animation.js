@@ -469,6 +469,7 @@ class FireAnimationComponent {
 
     // 2. Dispara a limpeza assíncrona no processo principal
     let cleanDone = false;
+    this.cleanTimedOut = false;
     const cleanPromise = (window.browserAPI && typeof window.browserAPI.clearAllData === 'function')
       ? window.browserAPI.clearAllData(options)
       : Promise.resolve({ success: true, errors: [] });
@@ -485,7 +486,13 @@ class FireAnimationComponent {
       });
 
     // Timeout de segurança para evitar trava caso o main process demore
-    setTimeout(() => { cleanDone = true; }, 10000);
+    if (this.cleanTimeoutId) clearTimeout(this.cleanTimeoutId);
+    this.cleanTimeoutId = setTimeout(() => {
+      if (!cleanDone) {
+        this.cleanTimedOut = true;
+        cleanDone = true;
+      }
+    }, 10000);
 
     // 3. Acessibilidade: prefers-reduced-motion
     const prefersReducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -793,43 +800,51 @@ class FireAnimationComponent {
       cancelAnimationFrame(this.animationFrameId);
       this.animationFrameId = null;
     }
-
-    this.isRunning = false;
-
-    if (this.centerBadge) {
-      this.centerBadge.classList.remove('visible');
+    if (this.cleanTimeoutId) {
+      clearTimeout(this.cleanTimeoutId);
+      this.cleanTimeoutId = null;
     }
 
-    if (this.canvas) {
-      this.canvas.style.display = 'none';
-      if (this.ctx) {
-        this.ctx.clearRect(0, 0, this.width, this.height);
+    try {
+      if (this.centerBadge) {
+        this.centerBadge.classList.remove('visible');
       }
-    }
 
-    // 1. Invoca no main process para abrir UMA aba limpa ativa e fechar o overlay
-    if (window.browserAPI && typeof window.browserAPI.finishClearSession === 'function') {
-      try {
-        await window.browserAPI.finishClearSession();
-      } catch (err) {
-        console.warn('[FireAnimation] Aviso ao finalizar sessão limpa:', err);
+      if (this.canvas) {
+        this.canvas.style.display = 'none';
+        if (this.ctx) {
+          this.ctx.clearRect(0, 0, this.width, this.height);
+        }
       }
-    }
 
-    // 2. Remove o bloqueio de cliques na interface
-    document.body.classList.remove('ui-locked');
+      // 1. Invoca no main process para abrir UMA aba limpa ativa e fechar o overlay
+      if (window.browserAPI && typeof window.browserAPI.finishClearSession === 'function') {
+        try {
+          await window.browserAPI.finishClearSession();
+        } catch (err) {
+          console.warn('[FireAnimation] Aviso ao finalizar sessão limpa:', err);
+        }
+      }
 
-    // 3. Exibe o Toast informativo: se houver falhas exibe aviso, caso contrário confirmação
-    const result = this.lastCleanResult;
-    const hasErrors = !result || result.success === false || (Array.isArray(result.errors) && result.errors.length > 0);
-    if (hasErrors) {
-      this.showToast('Alguns dados não puderam ser apagados', true);
-    } else {
-      this.showToast('Abas e dados apagados', false);
-    }
+      // 2. Exibe o Toast informativo: se houve timeout, falhas ou confirmação
+      if (this.cleanTimedOut) {
+        this.showToast('A limpeza ainda pode estar em andamento no sistema', true);
+      } else {
+        const result = this.lastCleanResult;
+        const hasErrors = !result || result.success === false || (Array.isArray(result.errors) && result.errors.length > 0);
+        if (hasErrors) {
+          this.showToast('Alguns dados não puderam ser apagados', true);
+        } else {
+          this.showToast('Abas e dados apagados', false);
+        }
+      }
 
-    if (typeof onComplete === 'function') {
-      onComplete();
+      if (typeof onComplete === 'function') {
+        onComplete();
+      }
+    } finally {
+      this.isRunning = false;
+      document.body.classList.remove('ui-locked');
     }
   }
 

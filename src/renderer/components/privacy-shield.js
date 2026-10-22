@@ -81,7 +81,7 @@ class PrivacyShieldComponent {
     this.isOpen = true;
 
     if (window.browserAPI && typeof window.browserAPI.showOverlay === 'function') {
-      window.browserAPI.showOverlay();
+      window.browserAPI.showOverlay('shield');
     }
 
     if (this.backdrop) this.backdrop.classList.add('visible');
@@ -101,7 +101,7 @@ class PrivacyShieldComponent {
     if (this.panel) this.panel.classList.remove('visible');
 
     if (window.browserAPI && typeof window.browserAPI.hideOverlay === 'function') {
-      window.browserAPI.hideOverlay();
+      window.browserAPI.hideOverlay('shield');
     }
   }
 

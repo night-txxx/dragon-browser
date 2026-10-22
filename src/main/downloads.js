@@ -131,9 +131,11 @@ function registerSessionDownloads(ses, isPrivate = false) {
 
     attachDownloadListeners(item, downloadRecord, downloadId, isPrivate);
 
-    // ETAPA 4: Verificação de risco antes de definir savePath
+    // ETAPA 4 / 1.3: Verificação de risco - define savePath de forma síncrona junto com pause()
+    // para evitar que o Electron abra o diálogo nativo "Salvar como" do sistema operacional.
     const isRisky = isRiskyDownload(originalFilename);
     if (isRisky) {
+      item.setSavePath(savePath);
       item.pause();
 
       let originDomain = '';
@@ -181,7 +183,6 @@ function confirmRiskDownload(downloadId) {
   }
 
   pendingRiskDownloads.delete(downloadId);
-  entry.item.setSavePath(entry.savePath);
   activeDownloads.set(downloadId, {
     item: entry.item,
     record: entry.downloadRecord,
@@ -194,7 +195,7 @@ function confirmRiskDownload(downloadId) {
 }
 
 /**
- * Cancela e descarta o download pausado por risco
+ * Cancela e descarta o download pausado por risco, apagando o arquivo parcial do disco
  * @param {string} downloadId
  * @returns {boolean}
  */
@@ -204,8 +205,26 @@ function cancelRiskDownload(downloadId) {
 
   pendingRiskDownloads.delete(downloadId);
   if (entry.item && !entry.item.isDestroyed()) {
-    entry.item.cancel();
+    try {
+      entry.item.cancel();
+    } catch {}
   }
+
+  // Remove arquivo parcial ou marcador .crdownload gerado no disco
+  if (entry.savePath) {
+    try {
+      if (fs.existsSync(entry.savePath)) {
+        fs.unlinkSync(entry.savePath);
+      }
+      const crdownloadPath = `${entry.savePath}.crdownload`;
+      if (fs.existsSync(crdownloadPath)) {
+        fs.unlinkSync(crdownloadPath);
+      }
+    } catch (err) {
+      console.warn('[Downloads] Falha ao remover arquivo parcial cancelado:', err.message);
+    }
+  }
+
   notifyUpdate({ ...entry.downloadRecord, state: 'cancelled' });
   return true;
 }
@@ -223,6 +242,47 @@ function cancelDownload(downloadId) {
     return true;
   }
   return false;
+}
+
+/**
+ * Cancela todos os downloads ativos e pendentes, removendo arquivos residuais
+ */
+function cancelAllActiveDownloads() {
+  for (const entry of activeDownloads.values()) {
+    try {
+      if (entry && entry.item && !entry.item.isDestroyed()) {
+        entry.item.cancel();
+      }
+      if (entry && entry.record && entry.record.path) {
+        if (fs.existsSync(entry.record.path)) {
+          fs.unlinkSync(entry.record.path);
+        }
+        const crPath = `${entry.record.path}.crdownload`;
+        if (fs.existsSync(crPath)) {
+          fs.unlinkSync(crPath);
+        }
+      }
+    } catch {}
+  }
+  activeDownloads.clear();
+
+  for (const entry of pendingRiskDownloads.values()) {
+    try {
+      if (entry && entry.item && !entry.item.isDestroyed()) {
+        entry.item.cancel();
+      }
+      if (entry && entry.savePath) {
+        if (fs.existsSync(entry.savePath)) {
+          fs.unlinkSync(entry.savePath);
+        }
+        const crPath = `${entry.savePath}.crdownload`;
+        if (fs.existsSync(crPath)) {
+          fs.unlinkSync(crPath);
+        }
+      }
+    } catch {}
+  }
+  pendingRiskDownloads.clear();
 }
 
 /**
@@ -267,7 +327,10 @@ function getDownloads() {
  */
 function clearHistory() {
   downloadsHistory = [];
-  persistHistory();
+  storage.writeJSON(DOWNLOADS_FILENAME, [], { noBackup: true });
+  if (typeof storage.removeBackupAndTempFiles === 'function') {
+    storage.removeBackupAndTempFiles(DOWNLOADS_FILENAME);
+  }
 }
 
 module.exports = {
@@ -277,6 +340,7 @@ module.exports = {
   confirmRiskDownload,
   cancelRiskDownload,
   cancelDownload,
+  cancelAllActiveDownloads,
   openFile,
   showInFolder,
   getDownloads,

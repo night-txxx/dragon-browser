@@ -102,7 +102,7 @@ function cancelPendingRequestsForWebContents(webContentsId) {
   }
 
   if (pendingPermissionRequests.size === 0 && windowManagerRef) {
-    windowManagerRef.hideOverlay();
+    windowManagerRef.hideOverlay('permission');
   }
 }
 
@@ -161,7 +161,7 @@ function respondPermission(requestId, allowed, remember) {
 
   // O overlay só deve ser escondido quando a fila esvaziar por completo
   if (pendingPermissionRequests.size === 0 && windowManagerRef) {
-    windowManagerRef.hideOverlay();
+    windowManagerRef.hideOverlay('permission');
   }
 }
 
@@ -251,7 +251,7 @@ function configureSession(ses, isPrivate = false) {
       });
 
       if (windowManagerRef) {
-        windowManagerRef.showOverlay();
+        windowManagerRef.showOverlay('permission');
       }
     } else {
       callback(false);
@@ -324,6 +324,10 @@ function init(context) {
   });
 }
 
+function clearPrivatePermissions() {
+  privatePermissions.clear();
+}
+
 module.exports = {
   init,
   configureSession,
@@ -332,5 +336,6 @@ module.exports = {
   cancelPendingRequestsForWebContents,
   getPermissionKey,
   getPermissionLabel,
-  ALLOWED_PERMISSIONS
+  ALLOWED_PERMISSIONS,
+  clearPrivatePermissions
 };

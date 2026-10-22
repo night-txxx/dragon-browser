@@ -63,7 +63,7 @@ class DownloadRiskSheetComponent {
     }
 
     if (window.browserAPI && typeof window.browserAPI.showOverlay === 'function') {
-      window.browserAPI.showOverlay();
+      window.browserAPI.showOverlay('download-risk');
     }
 
     this.overlay.classList.add('visible');
@@ -109,7 +109,7 @@ class DownloadRiskSheetComponent {
       this.overlay.classList.remove('visible');
     }
     if (window.browserAPI && typeof window.browserAPI.hideOverlay === 'function') {
-      window.browserAPI.hideOverlay();
+      window.browserAPI.hideOverlay('download-risk');
     }
   }
 }

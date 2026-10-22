@@ -47,8 +47,8 @@ contextBridge.exposeInMainWorld('browserAPI', {
   respondPermission: (requestId, allowed, remember) => ipcRenderer.invoke('permissions:respond', { requestId, allowed, remember }),
 
   // --- Controle de Camadas / Overlay ---
-  showOverlay: () => ipcRenderer.invoke('window:show-overlay'),
-  hideOverlay: () => ipcRenderer.invoke('window:hide-overlay'),
+  showOverlay: (owner = 'default') => ipcRenderer.invoke('window:show-overlay', owner),
+  hideOverlay: (owner = 'default') => ipcRenderer.invoke('window:hide-overlay', owner),
 
   // --- Apagar Tudo (Fogo do Dragão Azul) ---
   clearAllData: (options) => ipcRenderer.invoke('app:clear-all-data', options),

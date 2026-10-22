@@ -165,8 +165,15 @@ function deleteEntry(id) {
  * Limpa todo o histórico de navegação
  */
 function clearAll() {
+  if (persistTimer) {
+    clearTimeout(persistTimer);
+    persistTimer = null;
+  }
   historyCache = [];
-  flushHistorySync();
+  storage.writeJSON(HISTORY_FILENAME, [], { noBackup: true });
+  if (typeof storage.removeBackupAndTempFiles === 'function') {
+    storage.removeBackupAndTempFiles(HISTORY_FILENAME);
+  }
 }
 
 module.exports = {

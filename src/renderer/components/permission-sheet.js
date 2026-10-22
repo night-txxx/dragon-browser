@@ -73,6 +73,10 @@ class PermissionSheetComponent {
       this.rememberCheck.checked = true;
     }
 
+    if (window.browserAPI && typeof window.browserAPI.showOverlay === 'function') {
+      window.browserAPI.showOverlay('permission');
+    }
+
     this.overlay.classList.add('visible');
   }
 
@@ -119,6 +123,9 @@ class PermissionSheetComponent {
     } else {
       if (this.overlay) {
         this.overlay.classList.remove('visible');
+      }
+      if (window.browserAPI && typeof window.browserAPI.hideOverlay === 'function') {
+        window.browserAPI.hideOverlay('permission');
       }
     }
   }

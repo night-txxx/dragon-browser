@@ -123,7 +123,10 @@ function revokePermission(origin, permissionKey) {
  */
 function clearAll() {
   permissionsCache = {};
-  persistPermissions();
+  storage.writeJSON(PERMISSIONS_FILENAME, permissionsCache, { noBackup: true });
+  if (typeof storage.removeBackupAndTempFiles === 'function') {
+    storage.removeBackupAndTempFiles(PERMISSIONS_FILENAME);
+  }
 }
 
 module.exports = {

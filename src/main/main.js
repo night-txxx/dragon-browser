@@ -20,16 +20,27 @@ function preserveExistingUserData() {
     const appData = app.getPath('appData');
     const oldUserDataPath = path.join(appData, 'meu-navegador');
     const newUserDataPath = path.join(appData, 'Dragon');
+    const markerFile = path.join(newUserDataPath, '.migrated');
 
-    const shouldMigrate = fs.existsSync(oldUserDataPath) && (
-      !fs.existsSync(newUserDataPath) ||
-      fs.readdirSync(newUserDataPath).length === 0 ||
-      !fs.existsSync(path.join(newUserDataPath, 'Network'))
-    );
+    if (fs.existsSync(markerFile)) {
+      return;
+    }
+
+    if (fs.existsSync(newUserDataPath) && fs.readdirSync(newUserDataPath).length > 0 && fs.existsSync(path.join(newUserDataPath, 'Network'))) {
+      try {
+        fs.writeFileSync(markerFile, new Date().toISOString(), 'utf-8');
+      } catch {}
+      return;
+    }
+
+    const shouldMigrate = fs.existsSync(oldUserDataPath) && !fs.existsSync(markerFile);
 
     if (shouldMigrate) {
       console.log(`[Migração] Copiando dados de ${oldUserDataPath} para ${newUserDataPath}...`);
-      fs.cpSync(oldUserDataPath, newUserDataPath, { recursive: true, errorOnExist: false });
+      fs.cpSync(oldUserDataPath, newUserDataPath, { recursive: true, errorOnExist: false, force: false });
+      try {
+        fs.writeFileSync(markerFile, new Date().toISOString(), 'utf-8');
+      } catch {}
       console.log('[Migração] Dados, cookies, logins e preferências preservados com sucesso em Dragon.');
     }
   } catch (err) {

@@ -128,7 +128,10 @@ function toggleBookmark(item) {
  */
 function clearAll() {
   bookmarksCache = [];
-  persistBookmarks();
+  storage.writeJSON(BOOKMARKS_FILENAME, bookmarksCache, { noBackup: true });
+  if (typeof storage.removeBackupAndTempFiles === 'function') {
+    storage.removeBackupAndTempFiles(BOOKMARKS_FILENAME);
+  }
 }
 
 module.exports = {

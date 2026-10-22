@@ -63,7 +63,7 @@ function readJSON(filename, defaultValue = null) {
  * @param {*} data Dados serializáveis em JSON
  * @returns {boolean} Retorna true se a gravação foi bem-sucedida
  */
-function writeJSON(filename, data) {
+function writeJSON(filename, data, options = {}) {
   try {
     const filePath = path.join(storageDir, filename);
     const tmpPath = `${filePath}.tmp`;
@@ -73,8 +73,8 @@ function writeJSON(filename, data) {
     // 1. Grava primeiramente no arquivo temporário .tmp
     fs.writeFileSync(tmpPath, content, 'utf-8');
 
-    // 2. Se o destino atual já existir, preserva no .bak
-    if (fs.existsSync(filePath)) {
+    // 2. Se o destino atual já existir e não for gravação sem backup, preserva no .bak
+    if (fs.existsSync(filePath) && (!options || !options.noBackup)) {
       try {
         fs.copyFileSync(filePath, bakPath);
       } catch {}
@@ -86,6 +86,28 @@ function writeJSON(filename, data) {
   } catch (error) {
     console.error(`[Storage] Erro ao gravar atomicamente o arquivo ${filename}:`, error.message);
     return false;
+  }
+}
+
+/**
+ * Remove os arquivos de backup (.bak) e temporários (.tmp) de um arquivo JSON.
+ * Usado na limpeza completa para evitar ressurreição de dados antigos.
+ * @param {string} filename Nome do arquivo (ex: 'history.json')
+ */
+function removeBackupAndTempFiles(filename) {
+  try {
+    const filePath = path.join(storageDir, filename);
+    const bakPath = `${filePath}.bak`;
+    const tmpPath = `${filePath}.tmp`;
+
+    if (fs.existsSync(bakPath)) {
+      fs.unlinkSync(bakPath);
+    }
+    if (fs.existsSync(tmpPath)) {
+      fs.unlinkSync(tmpPath);
+    }
+  } catch (err) {
+    console.warn(`[Storage] Aviso ao remover backups de ${filename}:`, err.message);
   }
 }
 
@@ -122,6 +144,7 @@ module.exports = {
   init,
   readJSON,
   writeJSON,
+  removeBackupAndTempFiles,
   clearBrowserData
 };
 

@@ -3,7 +3,9 @@ const assert = require('node:assert');
 const {
   isValidSetting,
   mergeWithDefaults,
-  DEFAULT_SETTINGS
+  DEFAULT_SETTINGS,
+  convertProxySettingsToUI,
+  convertProxyUIToSettings
 } = require('../src/main/pure/settings-utils');
 
 test('isValidSetting: valida tipos, limites e enums', () => {
@@ -81,4 +83,40 @@ test('mergeWithDefaults: mescla chaves válidas e descarta corrompidas', () => {
   assert.strictEqual(merged.defaultZoom, DEFAULT_SETTINGS.defaultZoom);
   assert.strictEqual(merged.chaveInvalida, undefined);
   assert.strictEqual(merged.searchEngine, DEFAULT_SETTINGS.searchEngine);
+});
+
+test('convertProxySettingsToUI: converte modelo de backend para UI', () => {
+  const settings = {
+    proxyMode: 'manual',
+    proxyRules: 'socks5://127.0.0.1:1080',
+    proxyAuthUser: 'dragon_user',
+    applyProxyToPrivateTabs: true,
+    hasProxyPassword: true
+  };
+
+  const ui = convertProxySettingsToUI(settings);
+  assert.strictEqual(ui.proxyEnabled, true);
+  assert.strictEqual(ui.proxyProtocol, 'socks5');
+  assert.strictEqual(ui.proxyHost, '127.0.0.1');
+  assert.strictEqual(ui.proxyPort, '1080');
+  assert.strictEqual(ui.proxyUsername, 'dragon_user');
+  assert.strictEqual(ui.proxyApplyPrivate, true);
+  assert.strictEqual(ui.hasProxyPassword, true);
+});
+
+test('convertProxyUIToSettings: converte dados do formulário para modelo persistido', () => {
+  const uiData = {
+    proxyEnabled: true,
+    proxyProtocol: 'http',
+    proxyHost: 'proxy.corp.com',
+    proxyPort: '8080',
+    proxyUsername: 'admin',
+    proxyApplyPrivate: false
+  };
+
+  const s = convertProxyUIToSettings(uiData);
+  assert.strictEqual(s.proxyMode, 'manual');
+  assert.strictEqual(s.proxyRules, 'http://proxy.corp.com:8080');
+  assert.strictEqual(s.proxyAuthUser, 'admin');
+  assert.strictEqual(s.applyProxyToPrivateTabs, false);
 });

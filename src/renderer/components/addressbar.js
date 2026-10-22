@@ -281,7 +281,7 @@ class AddressBarComponent {
     this.updateDropdownPosition();
     this.dropdown.classList.add('visible');
     if (window.browserAPI) {
-      window.browserAPI.showOverlay();
+      window.browserAPI.showOverlay('omnibox');
     }
   }
 
@@ -291,7 +291,7 @@ class AddressBarComponent {
     this.suggestions = [];
     this.selectedIndex = -1;
     if (window.browserAPI) {
-      window.browserAPI.hideOverlay();
+      window.browserAPI.hideOverlay('omnibox');
     }
   }
 

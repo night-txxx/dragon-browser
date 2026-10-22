@@ -239,9 +239,57 @@ function mergeWithDefaults(saved) {
   return result;
 }
 
+function convertProxySettingsToUI(settings = {}) {
+  const proxyEnabled = settings.proxyMode === 'manual';
+  let proxyProtocol = 'http';
+  let proxyHost = '';
+  let proxyPort = '';
+
+  const rules = typeof settings.proxyRules === 'string' ? settings.proxyRules.trim() : '';
+  if (rules) {
+    const match = rules.match(/^(?:([a-zA-Z0-9]+):\/\/)?([^:]+)(?::(\d+))?$/);
+    if (match) {
+      proxyProtocol = match[1] || 'http';
+      proxyHost = match[2] || '';
+      proxyPort = match[3] || '';
+    }
+  }
+
+  return {
+    proxyEnabled,
+    proxyProtocol,
+    proxyHost,
+    proxyPort,
+    proxyUsername: typeof settings.proxyAuthUser === 'string' ? settings.proxyAuthUser : '',
+    proxyApplyPrivate: Boolean(settings.applyProxyToPrivateTabs),
+    hasProxyPassword: Boolean(settings.hasProxyPassword)
+  };
+}
+
+function convertProxyUIToSettings(uiData = {}) {
+  const proxyMode = uiData.proxyEnabled ? 'manual' : 'system';
+  const proto = (uiData.proxyProtocol || 'http').trim();
+  const host = (uiData.proxyHost || '').trim();
+  const port = (uiData.proxyPort !== undefined && uiData.proxyPort !== null) ? String(uiData.proxyPort).trim() : '';
+
+  let proxyRules = '';
+  if (host) {
+    proxyRules = port ? `${proto}://${host}:${port}` : `${proto}://${host}`;
+  }
+
+  return {
+    proxyMode,
+    proxyRules,
+    proxyAuthUser: (uiData.proxyUsername || '').trim(),
+    applyProxyToPrivateTabs: Boolean(uiData.proxyApplyPrivate)
+  };
+}
+
 module.exports = {
   DEFAULT_SETTINGS,
   isValidSetting,
   mergeWithDefaults,
-  isValidHttpUrl
+  isValidHttpUrl,
+  convertProxySettingsToUI,
+  convertProxyUIToSettings
 };

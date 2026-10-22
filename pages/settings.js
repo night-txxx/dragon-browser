@@ -421,16 +421,34 @@ async function loadSettings() {
     setCheckedIfNotFocused(toggleShortcuts, s.showShortcuts !== false);
 
     // Seção Proxy
+    const isProxyManual = s.proxyMode === 'manual' || Boolean(s.proxyEnabled);
     if (toggleProxyEnabled) {
-      setCheckedIfNotFocused(toggleProxyEnabled, Boolean(s.proxyEnabled));
-      if (proxyFields) proxyFields.style.display = s.proxyEnabled ? 'flex' : 'none';
+      setCheckedIfNotFocused(toggleProxyEnabled, isProxyManual);
+      if (proxyFields) proxyFields.style.display = isProxyManual ? 'flex' : 'none';
     }
-    setValIfNotFocused(selectProxyProtocol, s.proxyProtocol || 'http');
-    setValIfNotFocused(inputProxyHost, s.proxyHost || '');
-    setValIfNotFocused(inputProxyPort, s.proxyPort || '');
-    setValIfNotFocused(inputProxyUsername, s.proxyUsername || '');
+
+    let proto = 'http';
+    let host = '';
+    let port = '';
+    if (s.proxyRules) {
+      const match = s.proxyRules.match(/^(?:([a-zA-Z0-9]+):\/\/)?([^:]+)(?::(\d+))?$/);
+      if (match) {
+        proto = match[1] || 'http';
+        host = match[2] || '';
+        port = match[3] || '';
+      }
+    } else {
+      proto = s.proxyProtocol || 'http';
+      host = s.proxyHost || '';
+      port = s.proxyPort || '';
+    }
+
+    setValIfNotFocused(selectProxyProtocol, proto);
+    setValIfNotFocused(inputProxyHost, host);
+    setValIfNotFocused(inputProxyPort, port);
+    setValIfNotFocused(inputProxyUsername, s.proxyAuthUser || s.proxyUsername || '');
     setValIfNotFocused(inputProxyPassword, s.hasProxyPassword ? '••••••••' : '');
-    setCheckedIfNotFocused(toggleProxyApplyPrivate, Boolean(s.proxyApplyPrivate));
+    setCheckedIfNotFocused(toggleProxyApplyPrivate, s.applyProxyToPrivateTabs !== undefined ? Boolean(s.applyProxyToPrivateTabs) : Boolean(s.proxyApplyPrivate));
 
     // Seção Privacidade Avançada (Fingerprinting Multivetorial)
     if (toggleFpEnabled) {
@@ -634,41 +652,59 @@ function initEvents() {
   }
 
   // Controles de Proxy
+  function syncProxyRules() {
+    const proto = selectProxyProtocol ? selectProxyProtocol.value : 'http';
+    const host = inputProxyHost ? inputProxyHost.value.trim() : '';
+    const port = inputProxyPort ? inputProxyPort.value.trim() : '';
+    let rules = '';
+    if (host) {
+      rules = port ? `${proto}://${host}:${port}` : `${proto}://${host}`;
+    }
+    window.settingsAPI.setSetting('proxyRules', rules);
+  }
+
+  const debouncedSyncRules = debounce(syncProxyRules, 300);
+
   if (toggleProxyEnabled) {
     toggleProxyEnabled.addEventListener('change', () => {
       const enabled = toggleProxyEnabled.checked;
       if (proxyFields) proxyFields.style.display = enabled ? 'flex' : 'none';
-      window.settingsAPI.setSetting('proxyEnabled', enabled);
+      window.settingsAPI.setSetting('proxyMode', enabled ? 'manual' : 'system');
+      if (enabled) {
+        syncProxyRules();
+      }
     });
   }
 
   if (selectProxyProtocol) {
     selectProxyProtocol.addEventListener('change', () => {
-      window.settingsAPI.setSetting('proxyProtocol', selectProxyProtocol.value);
+      syncProxyRules();
     });
   }
 
   if (inputProxyHost) {
     inputProxyHost.addEventListener('input', () => {
-      debouncedSet('proxyHost', inputProxyHost.value.trim());
+      debouncedSyncRules();
     });
   }
 
   if (inputProxyPort) {
     inputProxyPort.addEventListener('input', () => {
-      debouncedSet('proxyPort', inputProxyPort.value.trim());
+      debouncedSyncRules();
     });
   }
 
   if (inputProxyUsername) {
     inputProxyUsername.addEventListener('input', () => {
-      debouncedSet('proxyUsername', inputProxyUsername.value.trim());
+      debouncedSet('proxyAuthUser', inputProxyUsername.value.trim());
     });
   }
 
   if (inputProxyPassword) {
     const debouncedPass = debounce((pass) => {
-      window.settingsAPI.setProxyPassword(pass);
+      if (pass !== '••••••••') {
+        window.settingsAPI.setProxyPassword(pass);
+      }
     }, 400);
 
     inputProxyPassword.addEventListener('input', () => {
@@ -678,7 +714,7 @@ function initEvents() {
 
   if (toggleProxyApplyPrivate) {
     toggleProxyApplyPrivate.addEventListener('change', () => {
-      window.settingsAPI.setSetting('proxyApplyPrivate', toggleProxyApplyPrivate.checked);
+      window.settingsAPI.setSetting('applyProxyToPrivateTabs', toggleProxyApplyPrivate.checked);
     });
   }
 

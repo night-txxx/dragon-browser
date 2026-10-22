@@ -119,7 +119,8 @@ function getAll() {
 function getSettingsPageData() {
   const all = get();
   all.backgroundImageDataUrl = getBackgroundImageDataUrl(all.backgroundImage);
-  all.proxyPassword = getProxyPassword();
+  delete all.proxyAuthPasswordEncrypted;
+  all.hasProxyPassword = Boolean(getProxyPassword());
   return all;
 }
 
@@ -517,7 +518,15 @@ async function testProxyConnection(proxyConfig = {}) {
   const testPartition = 'proxy-test-' + Date.now();
   const testSes = session.fromPartition(testPartition);
 
-  const rules = proxyConfig.proxyRules || get('proxyRules') || '';
+  let rules = proxyConfig.proxyRules || '';
+  if (!rules && proxyConfig.host) {
+    const proto = proxyConfig.protocol || 'http';
+    const port = proxyConfig.port ? `:${proxyConfig.port}` : '';
+    rules = `${proto}://${proxyConfig.host}${port}`;
+  }
+  if (!rules) {
+    rules = get('proxyRules') || '';
+  }
   const bypass = proxyConfig.proxyBypass || get('proxyBypass') || '';
 
   if (!rules) {

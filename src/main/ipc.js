@@ -178,7 +178,14 @@ function init(context) {
     }
     // Emite o evento settings:changed em tempo real para abas abertas de configurações
     if (tabManager && typeof tabManager.broadcastToSettingsTabs === 'function') {
-      tabManager.broadcastToSettingsTabs('settings:changed', { key, value, allSettings });
+      const safeAll = { ...allSettings };
+      delete safeAll.proxyAuthPasswordEncrypted;
+      safeAll.hasProxyPassword = Boolean(settings.getProxyPassword());
+      tabManager.broadcastToSettingsTabs('settings:changed', {
+        key,
+        value: key === 'proxyAuthPasswordEncrypted' ? undefined : value,
+        allSettings: safeAll
+      });
     }
   });
 
@@ -371,9 +378,9 @@ function init(context) {
   // Finalidade: Oculta a WebContentsView para que menus/modais HTML da interface
   // possam ser exibidos sem ficarem cobertos pela camada do site.
   // ---------------------------------------------------------------------------
-  ipcMain.handle('window:show-overlay', (event) => {
+  ipcMain.handle('window:show-overlay', (event, owner) => {
     if (!isMainSender(event, mainWindow)) return false;
-    windowManager.showOverlay();
+    windowManager.showOverlay(owner || 'default');
     return true;
   });
 
@@ -381,9 +388,9 @@ function init(context) {
   // CANAL: window:hide-overlay
   // Finalidade: Restaura a visibilidade da WebContentsView ativa.
   // ---------------------------------------------------------------------------
-  ipcMain.handle('window:hide-overlay', (event) => {
+  ipcMain.handle('window:hide-overlay', (event, owner) => {
     if (!isMainSender(event, mainWindow)) return false;
-    windowManager.hideOverlay();
+    windowManager.hideOverlay(owner || 'default');
     return true;
   });
 
@@ -434,7 +441,7 @@ function init(context) {
   ipcMain.handle('app:finish-clear-session', (event) => {
     if (!isMainSender(event, mainWindow)) return { success: false };
     menu.setIsClearing(false);
-    windowManager.hideOverlay();
+    windowManager.hideOverlay('*');
     const newTab = tabManager.createTab(config.NEW_TAB_URL, { active: true });
     if (typeof tabManager.notifyStateChange === 'function') {
       tabManager.notifyStateChange();

@@ -64,7 +64,7 @@ class FireSheetComponent {
 
     // Notifica o main process para esconder a WebContentsView da aba ativa
     if (window.browserAPI && typeof window.browserAPI.showOverlay === 'function') {
-      window.browserAPI.showOverlay();
+      window.browserAPI.showOverlay('fire-sheet');
     }
 
     if (this.overlay) {
@@ -95,7 +95,7 @@ class FireSheetComponent {
 
     // Restaura a visualização da página web
     if (window.browserAPI && typeof window.browserAPI.hideOverlay === 'function') {
-      window.browserAPI.hideOverlay();
+      window.browserAPI.hideOverlay('fire-sheet');
     }
   }
 

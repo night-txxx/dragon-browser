@@ -9,6 +9,7 @@ const history = require('./history');
 const downloads = require('./downloads');
 const permissions = require('./permissions');
 const bookmarks = require('./bookmarks');
+const sessionModule = require('./session');
 
 /**
  * Lista de tipos de armazenamento suportados pelo Electron
@@ -62,14 +63,20 @@ async function clearAllData(context, options = {}) {
   // 1. Fechar e destruir TODAS as abas existentes (libera memória e encerra webContents)
   try {
     if (tabManager && typeof tabManager.destroyAllTabs === 'function') {
-      summary.tabsDestroyed = tabManager.destroyAllTabs();
+      summary.tabsDestroyed = await tabManager.destroyAllTabs();
     }
     if (tabManager && typeof tabManager.clearClosedTabs === 'function') {
       tabManager.clearClosedTabs();
     }
+    if (downloads && typeof downloads.cancelAllActiveDownloads === 'function') {
+      downloads.cancelAllActiveDownloads();
+    }
+    if (sessionModule && typeof sessionModule.clearPrivatePermissions === 'function') {
+      sessionModule.clearPrivatePermissions();
+    }
   } catch (err) {
-    console.error('[ClearData] Erro ao fechar abas:', err);
-    summary.errors.push(`Erro ao fechar abas: ${err.message}`);
+    console.error('[ClearData] Erro ao fechar abas ou cancelar processos:', err);
+    summary.errors.push(`Erro ao fechar abas ou cancelar processos: ${err.message}`);
   }
 
   // 2. Limpar histórico de navegação (zera cache em memória e persiste history.json vazio)
@@ -215,11 +222,14 @@ async function clearAllData(context, options = {}) {
     summary.errors.push(`Erro ao limpar dados locais do storage: ${err.message}`);
   }
 
-  // 13. Zerar sessions.json no disco
+  // 13. Zerar sessions.json no disco sem manter backups
   try {
     if (storage && typeof storage.writeJSON === 'function') {
-      storage.writeJSON('sessions.json', { urls: [] });
-      console.log('[ClearData] sessions.json zerado no disco.');
+      storage.writeJSON('sessions.json', { urls: [] }, { noBackup: true });
+      if (typeof storage.removeBackupAndTempFiles === 'function') {
+        storage.removeBackupAndTempFiles('sessions.json');
+      }
+      console.log('[ClearData] sessions.json zerado no disco sem backup.');
     }
   } catch (err) {
     console.warn('[ClearData] Aviso ao zerar sessions.json:', err.message);
@@ -290,8 +300,33 @@ async function clearAllData(context, options = {}) {
     summary.errors.push(`Erro ao limpar partições privadas: ${err.message}`);
   }
 
+  // 16. Segunda passada de garantia para limpar storageData e cache residual
+  if (defaultSession) {
+    try {
+      if (typeof defaultSession.clearStorageData === 'function') {
+        await defaultSession.clearStorageData({});
+      }
+    } catch {}
+    try {
+      if (typeof defaultSession.clearCache === 'function') {
+        await defaultSession.clearCache();
+      }
+    } catch {}
+  }
+
   // Define status de sucesso geral (verdadeiro se não houver erros registrados)
   summary.success = summary.errors.length === 0;
+
+  console.log('[ClearData] Resumo da limpeza concluída:', {
+    success: summary.success,
+    tabsDestroyed: summary.tabsDestroyed,
+    historyCleared: summary.historyCleared,
+    downloadsCleared: summary.downloadsCleared,
+    permissionsCleared: summary.permissionsCleared,
+    bookmarksCleared: summary.bookmarksCleared,
+    customPartitionsCleared: summary.customPartitionsCleared,
+    errorsCount: summary.errors.length
+  });
 
   return summary;
 }
