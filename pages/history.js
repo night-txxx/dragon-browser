@@ -111,11 +111,18 @@ if (inputSearch) {
 
 if (btnClearAll) {
   btnClearAll.addEventListener('click', async () => {
-    if (confirm('Deseja limpar todo o histórico de navegação?')) {
-      if (window.historyAPI) {
-        await window.historyAPI.clearAll();
-        renderEntries([]);
-      }
+    const confirmed = await window.dragonConfirm({
+      title: 'Limpar histórico',
+      message: 'Deseja limpar todo o histórico de navegação?',
+      confirmText: 'Limpar tudo',
+      cancelText: 'Cancelar',
+      danger: true
+    });
+    if (!confirmed) return;
+
+    if (window.historyAPI) {
+      await window.historyAPI.clearAll();
+      renderEntries([]);
     }
   });
 }

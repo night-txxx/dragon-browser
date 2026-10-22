@@ -152,11 +152,18 @@ function renderDownloads(list) {
 
 if (btnClearAll) {
   btnClearAll.addEventListener('click', async () => {
-    if (confirm('Deseja limpar a lista de downloads? Os arquivos no seu disco não serão apagados.')) {
-      if (window.downloadsAPI) {
-        await window.downloadsAPI.clearHistory();
-        renderDownloads([]);
-      }
+    const confirmed = await window.dragonConfirm({
+      title: 'Limpar lista de downloads',
+      message: 'Deseja limpar o histórico de downloads? Os arquivos salvos no seu computador não serão apagados.',
+      confirmText: 'Limpar lista',
+      cancelText: 'Cancelar',
+      danger: false
+    });
+    if (!confirmed) return;
+
+    if (window.downloadsAPI) {
+      await window.downloadsAPI.clearHistory();
+      renderDownloads([]);
     }
   });
 }

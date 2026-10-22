@@ -106,11 +106,18 @@ if (inputSearch) {
 
 if (btnClearAll) {
   btnClearAll.addEventListener('click', async () => {
-    if (confirm('Deseja remover todos os favoritos?')) {
-      if (window.bookmarksAPI) {
-        await window.bookmarksAPI.clearAll();
-        renderBookmarks([]);
-      }
+    const confirmed = await window.dragonConfirm({
+      title: 'Remover favoritos',
+      message: 'Deseja remover todos os favoritos?',
+      confirmText: 'Remover todos',
+      cancelText: 'Cancelar',
+      danger: true
+    });
+    if (!confirmed) return;
+
+    if (window.bookmarksAPI) {
+      await window.bookmarksAPI.clearAll();
+      renderBookmarks([]);
     }
   });
 }

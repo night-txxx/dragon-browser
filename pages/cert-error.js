@@ -60,9 +60,17 @@ document.addEventListener('DOMContentLoaded', () => {
   if (btnDangerProceed) {
     btnDangerProceed.addEventListener('click', async () => {
       if (!targetUrl || targetUrl.includes('cert-error.html')) return;
-      const confirmed = window.confirm(
-        'ATENÇÃO: A conexão com este site NÃO é segura. O certificado digital não é confiável e terceiros podem interceptar ou adulterar suas informações pessoais.\n\nDeseja realmente continuar para este site de forma insegura?'
-      );
+      const confirmed = window.dragonConfirm
+        ? await window.dragonConfirm({
+            title: 'Aviso de Segurança',
+            message: 'A conexão com este site NÃO é segura. O certificado digital não é confiável e terceiros podem interceptar ou adulterar suas informações pessoais. Deseja realmente continuar para este site de forma insegura?',
+            confirmText: 'Continuar',
+            cancelText: 'Voltar',
+            danger: true
+          })
+        : window.confirm(
+            'ATENÇÃO: A conexão com este site NÃO é segura. O certificado digital não é confiável e terceiros podem interceptar ou adulterar suas informações pessoais.\n\nDeseja realmente continuar para este site de forma insegura?'
+          );
       if (confirmed) {
         if (window.certErrorAPI && typeof window.certErrorAPI.requestBypassToken === 'function') {
           try {

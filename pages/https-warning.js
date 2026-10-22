@@ -57,7 +57,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
       continueBtn.disabled = false;
       continueBtn.textContent = 'Continuar em HTTP (Inseguro)';
-      alert('Não foi possível obter autorização de segurança para este endereço.');
+      if (window.dragonAlert) {
+        await window.dragonAlert({
+          title: 'Erro de Autorização',
+          message: 'Não foi possível obter autorização de segurança para este endereço.'
+        });
+      } else {
+        alert('Não foi possível obter autorização de segurança para este endereço.');
+      }
     });
   }
 });

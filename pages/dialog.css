@@ -1,0 +1,174 @@
+/* =============================================================================
+   pages/dialog.css
+   Estilos unificados para os diálogos modais das páginas internas (dragonConfirm & dragonAlert)
+   Compatível com temas escuro e claro, com fallbacks integrados
+   ============================================================================= */
+
+.dg-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: var(--dialog-backdrop, rgba(8, 10, 20, 0.62));
+  backdrop-filter: blur(6px) saturate(120%);
+  -webkit-backdrop-filter: blur(6px) saturate(120%);
+  z-index: 99999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  box-sizing: border-box;
+  opacity: 0;
+  transition: opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.dg-overlay.dg-visible {
+  opacity: 1;
+}
+
+/* --- Cartão Centralizado --- */
+.dg-card {
+  position: relative;
+  width: calc(100% - 32px);
+  max-width: 440px;
+  margin: auto;
+  padding: 26px 26px 22px;
+  background-color: var(--dialog-bg, #23232b);
+  border: 1px solid var(--dialog-border, rgba(255, 255, 255, 0.08));
+  border-radius: 18px;
+  box-shadow: var(--dialog-shadow, 0 24px 60px rgba(0, 0, 0, 0.55));
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-sizing: border-box;
+  outline: none;
+  opacity: 0;
+  transform: translateY(10px) scale(0.97);
+  transition: opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1), transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.dg-overlay.dg-visible .dg-card {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dg-overlay,
+  .dg-card {
+    transition: none !important;
+    transform: none !important;
+  }
+}
+
+/* --- Cabeçalho Centralizado --- */
+.dg-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 14px;
+}
+
+/* Ícone central 52x52, raio 16px, svg 26px */
+.dg-icon-wrap {
+  width: 52px;
+  height: 52px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background-color: rgba(77, 124, 255, 0.14);
+  color: var(--color-accent, #4d7cff);
+}
+
+.dg-icon-wrap.dg-icon-danger {
+  background-color: rgba(239, 68, 68, 0.14);
+  color: var(--danger, #ef4444);
+}
+
+.dg-icon-wrap svg {
+  width: 26px;
+  height: 26px;
+  fill: currentColor;
+}
+
+/* Título: 17px, peso 650 */
+.dg-title {
+  font-size: 17px;
+  font-weight: 650;
+  color: var(--color-text-primary, #f0f0f5);
+  margin: 0;
+  text-align: center;
+  line-height: 1.35;
+}
+
+/* Texto: 13.5px, line-height 1.55, cor secundária */
+.dg-message {
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--color-text-secondary, #9e9ea8);
+  text-align: center;
+  margin: 0;
+  white-space: pre-line;
+  word-break: break-word;
+}
+
+/* --- Botões em Grid de 2 Colunas --- */
+.dg-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 6px;
+  width: 100%;
+}
+
+.dg-actions.dg-actions-single {
+  grid-template-columns: 1fr;
+}
+
+.dg-btn {
+  height: 42px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border: none;
+  outline: none;
+  padding: 0 16px;
+  box-sizing: border-box;
+  transition: filter 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+  user-select: none;
+}
+
+.dg-btn:hover {
+  filter: brightness(1.12);
+}
+
+.dg-btn:focus-visible {
+  outline: 2px solid var(--color-accent, #4d7cff);
+  outline-offset: 2px;
+}
+
+/* Secundário: fundo rgba(127,127,127,0.12) */
+.dg-btn-secondary {
+  background-color: rgba(127, 127, 127, 0.12);
+  color: var(--color-text-primary, #f0f0f5);
+}
+
+/* Primário Padrão: cor de destaque, texto branco */
+.dg-btn-primary {
+  background-color: var(--color-accent, #4d7cff);
+  color: #ffffff;
+}
+
+/* Primário Perigo: cor --danger */
+.dg-btn-danger {
+  background-color: var(--danger, #ef4444) !important;
+  color: #ffffff !important;
+}
+
+.dg-btn-danger:focus-visible {
+  outline-color: var(--danger, #ef4444);
+}

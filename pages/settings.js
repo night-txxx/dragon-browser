@@ -764,9 +764,17 @@ function initEvents() {
   // Botão "Resetar Fingerprint"
   if (btnResetFingerprint) {
     btnResetFingerprint.addEventListener('click', async () => {
-      const confirmReset = window.confirm(
-        'Isso vai gerar uma nova identidade de fingerprint aleatória e consistente. Todas as abas abertas serão recarregadas. Deseja continuar?'
-      );
+      const confirmReset = window.dragonConfirm
+        ? await window.dragonConfirm({
+            title: 'Resetar Fingerprint',
+            message: 'Isso vai gerar uma nova identidade de fingerprint aleatória e consistente. Todas as abas abertas serão recarregadas. Deseja continuar?',
+            confirmText: 'Resetar',
+            cancelText: 'Cancelar',
+            danger: true
+          })
+        : window.confirm(
+            'Isso vai gerar uma nova identidade de fingerprint aleatória e consistente. Todas as abas abertas serão recarregadas. Deseja continuar?'
+          );
       if (!confirmReset) return;
 
       try {
